@@ -2,6 +2,7 @@ import os
 import sys
 import shutil
 import sqlite3
+import re
 import unicodedata
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -1180,7 +1181,7 @@ class MainWindow(QMainWindow):
         self.library_stack = QStackedWidget()
         
         self.setup_songs_page()
-        self.setup_placeholder_page("Biblias")
+        self.setup_bible_page()
         self.setup_images_page()
         self.setup_pptx_page()
         self.setup_placeholder_page("Guión")
@@ -1259,6 +1260,320 @@ class MainWindow(QMainWindow):
         layout.addWidget(lbl)
 
         self.library_stack.addWidget(container)
+
+    # =========================================================================
+    # MÓDULO DE BIBLIA
+    # =========================================================================
+
+    # Libros agrupados por testamento, en orden canónico (coincide con import_bible.py)
+    BIBLE_BOOKS_OT = [
+        "Génesis", "Éxodo", "Levítico", "Números", "Deuteronomio",
+        "Josué", "Jueces", "Rut", "1 Samuel", "2 Samuel",
+        "1 Reyes", "2 Reyes", "1 Crónicas", "2 Crónicas",
+        "Esdras", "Nehemías", "Ester", "Job", "Salmos",
+        "Proverbios", "Eclesiastés", "Cantares", "Isaías",
+        "Jeremías", "Lamentaciones", "Ezequiel", "Daniel",
+        "Oseas", "Joel", "Amós", "Abdías", "Jonás",
+        "Miqueas", "Nahúm", "Habacuc", "Sofonías", "Hageo",
+        "Zacarías", "Malaquías",
+    ]
+    BIBLE_BOOKS_NT = [
+        "Mateo", "Marcos", "Lucas", "Juan", "Hechos",
+        "Romanos", "1 Corintios", "2 Corintios", "Gálatas",
+        "Efesios", "Filipenses", "Colosenses", "1 Tesalonicenses",
+        "2 Tesalonicenses", "1 Timoteo", "2 Timoteo", "Tito",
+        "Filemón", "Hebreos", "Santiago", "1 Pedro", "2 Pedro",
+        "1 Juan", "2 Juan", "3 Juan", "Judas", "Apocalipsis",
+    ]
+
+    def setup_bible_page(self):
+        container = QFrame()
+        container.setObjectName("libraryPanel")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+
+        # Estado interno del módulo biblia
+        self.bible_current_book = "Juan"
+        self.bible_current_version = "RVR60"
+
+        # ---- Buscador (cita rápida) ----
+        self.bible_search = QLineEdit()
+        self.bible_search.setObjectName("searchBar")
+        self.bible_search.setPlaceholderText("🔎 Buscar cita (ej. Juan 3 16) y Enter...")
+        self.bible_search.returnPressed.connect(self.on_bible_search_enter)
+        layout.addWidget(self.bible_search)
+
+        # ---- Fila: selector de libro + versiones ----
+        selector_row = QHBoxLayout()
+        selector_row.setSpacing(8)
+
+        self.bible_book_combo = QComboBox()
+        self.bible_book_combo.setObjectName("bibleBookCombo")
+        self.bible_book_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #27272a;
+                color: #ffffff;
+                border: 1px solid #3f3f46;
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background-color: #27272a;
+                color: #f4f4f5;
+                selection-background-color: #3f3f46;
+            }
+        """)
+        self.bible_book_combo.setMinimumWidth(160)
+        self._populate_book_combo()
+        self.bible_book_combo.currentTextChanged.connect(self.on_bible_book_changed)
+        selector_row.addWidget(self.bible_book_combo)
+
+        selector_row.addStretch()
+
+        # Pastillas de versión
+        self.bible_version_buttons = {}
+        for version in ["RVR60", "NVI", "LBLA", "DHH"]:
+            btn = QPushButton(version)
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(self._version_btn_style(False))
+            btn.clicked.connect(lambda checked, v=version: self.on_bible_version_changed(v))
+            selector_row.addWidget(btn)
+            self.bible_version_buttons[version] = btn
+
+        self.bible_version_buttons["RVR60"].setChecked(True)
+        self.bible_version_buttons["RVR60"].setStyleSheet(self._version_btn_style(True))
+
+        layout.addLayout(selector_row)
+
+        # ---- Label de capítulos ----
+        self.bible_chapters_label = QLabel("Capítulos · Juan")
+        self.bible_chapters_label.setStyleSheet("""
+            color: #71717a; font-size: 11px; font-weight: bold;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            background: transparent; margin-top: 4px;
+        """)
+        layout.addWidget(self.bible_chapters_label)
+
+        # ---- Grid de capítulos (scrollable) ----
+        self.bible_chapters_scroll = QScrollArea()
+        self.bible_chapters_scroll.setWidgetResizable(True)
+        self.bible_chapters_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.bible_chapters_scroll.setStyleSheet("background: transparent; border: none;")
+
+        self.bible_chapters_container = QWidget()
+        self.bible_chapters_container.setStyleSheet("background: transparent;")
+        self.bible_chapters_grid = QGridLayout(self.bible_chapters_container)
+        self.bible_chapters_grid.setSpacing(6)
+
+        self.bible_chapters_scroll.setWidget(self.bible_chapters_container)
+        layout.addWidget(self.bible_chapters_scroll, stretch=1)
+
+        self.library_stack.addWidget(container)
+
+        # Cargar capítulos del libro por defecto
+        self.load_bible_chapters(self.bible_current_book)
+
+    def _version_btn_style(self, active):
+        if active:
+            return """
+                QPushButton {
+                    background-color: #0F6E56;
+                    color: #ffffff;
+                    border: 1px solid #0F6E56;
+                    border-radius: 14px;
+                    padding: 5px 12px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+            """
+        return """
+            QPushButton {
+                background-color: #27272a;
+                color: #a1a1aa;
+                border: 1px solid #3f3f46;
+                border-radius: 14px;
+                padding: 5px 12px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3f3f46;
+                color: #ffffff;
+            }
+        """
+
+    def _populate_book_combo(self):
+        self.bible_book_combo.blockSignals(True)
+        self.bible_book_combo.clear()
+        self.bible_book_combo.addItem("── Antiguo Testamento ──")
+        self.bible_book_combo.model().item(0).setEnabled(False)
+        for book in self.BIBLE_BOOKS_OT:
+            self.bible_book_combo.addItem(book)
+        self.bible_book_combo.addItem("── Nuevo Testamento ──")
+        self.bible_book_combo.model().item(self.bible_book_combo.count() - 1).setEnabled(False)
+        for book in self.BIBLE_BOOKS_NT:
+            self.bible_book_combo.addItem(book)
+        self.bible_book_combo.setCurrentText(self.bible_current_book)
+        self.bible_book_combo.blockSignals(False)
+
+    def on_bible_version_changed(self, version):
+        self.bible_current_version = version
+        for v, btn in self.bible_version_buttons.items():
+            is_active = (v == version)
+            btn.setChecked(is_active)
+            btn.setStyleSheet(self._version_btn_style(is_active))
+        # Recargar capítulos por si la versión no tiene ese libro completo
+        self.load_bible_chapters(self.bible_current_book)
+
+    def on_bible_book_changed(self, book_name):
+        if book_name.startswith("──"):
+            return
+        self.bible_current_book = book_name
+        self.load_bible_chapters(book_name)
+
+    def load_bible_chapters(self, book_name):
+        """Carga el grid de capítulos disponibles para el libro/versión actual."""
+        self.bible_chapters_label.setText(f"Capítulos · {book_name}")
+
+        # Limpiar grid existente
+        while self.bible_chapters_grid.count():
+            child = self.bible_chapters_grid.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        conn = sqlite3.connect(database.DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT DISTINCT chapter FROM bible WHERE book = ? AND version = ? ORDER BY chapter",
+            (book_name, self.bible_current_version)
+        )
+        chapters = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        if not chapters:
+            empty_lbl = QLabel(f"Sin datos para «{book_name}» en {self.bible_current_version}")
+            empty_lbl.setStyleSheet("color: #71717a; font-size: 12px; background: transparent;")
+            self.bible_chapters_grid.addWidget(empty_lbl, 0, 0)
+            return
+
+        cols = 6
+        for idx, chapter_num in enumerate(chapters):
+            row, col = divmod(idx, cols)
+            btn = QPushButton(str(chapter_num))
+            btn.setFixedSize(48, 44)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #27272a;
+                    color: #e4e4e7;
+                    border: 1px solid #3f3f46;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #3f3f46;
+                    color: #ffffff;
+                }
+            """)
+            btn.clicked.connect(lambda checked, b=book_name, c=chapter_num: self.load_bible_chapter_to_preview(b, c))
+            self.bible_chapters_grid.addWidget(btn, row, col)
+
+    def on_bible_search_enter(self):
+        """Detecta si el texto es una cita válida ('Juan 3 16' o 'Juan 3:16') y navega directo."""
+        query = self.bible_search.text().strip()
+        if not query:
+            return
+
+        parsed = self._parse_bible_reference(query)
+        if not parsed:
+            QMessageBox.information(
+                self, "Cita no reconocida",
+                "Escribe una cita como: Juan 3 16  ó  Juan 3:16"
+            )
+            return
+
+        book_name, chapter, verse = parsed
+
+        # Sincronizar selector de libro
+        self.bible_current_book = book_name
+        self.bible_book_combo.blockSignals(True)
+        self.bible_book_combo.setCurrentText(book_name)
+        self.bible_book_combo.blockSignals(False)
+
+        self.load_bible_chapter_to_preview(book_name, chapter, focus_verse=verse)
+
+    def _parse_bible_reference(self, query):
+        """Intenta extraer (libro, capitulo, versiculo) de un texto libre."""
+        text = query.strip()
+        # Normalizar separadores : y , a espacios
+        text = text.replace(":", " ").replace(",", " ")
+        match = re.match(r"^(.*?)\s+(\d+)\s*(\d+)?$", text)
+        if not match:
+            return None
+
+        raw_book = match.group(1).strip()
+        chapter = int(match.group(2))
+        verse = int(match.group(3)) if match.group(3) else 1
+
+        # Buscar el libro de forma flexible (sin acentos, case-insensitive)
+        target = remove_accents(raw_book)
+        all_books = self.BIBLE_BOOKS_OT + self.BIBLE_BOOKS_NT
+        for book in all_books:
+            if remove_accents(book) == target or remove_accents(book).startswith(target):
+                return book, chapter, verse
+
+        return None
+
+    def load_bible_chapter_to_preview(self, book_name, chapter_num, focus_verse=None):
+        """Carga todos los versículos de un capítulo en la Preview izquierda."""
+        conn = sqlite3.connect(database.DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT verse, text FROM bible WHERE book = ? AND chapter = ? AND version = ? ORDER BY verse",
+            (book_name, chapter_num, self.bible_current_version)
+        )
+        verses = cursor.fetchall()
+        conn.close()
+
+        if not verses:
+            QMessageBox.warning(self, "Sin contenido", f"No hay versículos para {book_name} {chapter_num} en {self.bible_current_version}.")
+            return
+
+        chapter_title = f"{book_name} {chapter_num}"
+        self.active_item_title.setText(chapter_title)
+        self.preview_list.clear()
+
+        focus_item = None
+        for verse_num, verse_text in verses:
+            header = f"Versículo {verse_num}"
+            reference = f"{book_name} {chapter_num}:{verse_num}"
+
+            list_item = QListWidgetItem(self.preview_list)
+            list_item.setData(Qt.ItemDataRole.UserRole, {
+                "mode": "text",
+                "text": verse_text,
+                "header": reference,
+                "song_title": f"{book_name} {chapter_num} · {self.bible_current_version}"
+            })
+            card_widget = PreviewCardWidget(header=header, lyrics=verse_text)
+            list_item.setSizeHint(card_widget.minimumSizeHint())
+            self.preview_list.setItemWidget(list_item, card_widget)
+
+            if focus_verse and verse_num == focus_verse:
+                focus_item = list_item
+
+        # Seleccionar y proyectar: el versículo buscado, o el primero por defecto
+        target_item = focus_item if focus_item else self.preview_list.item(0)
+        if target_item:
+            self.preview_list.setCurrentItem(target_item)
+            self.preview_list.scrollToItem(target_item)
+            self.on_preview_card_clicked(target_item)
 
     def setup_images_page(self):
         container = QFrame()
