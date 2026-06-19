@@ -1,0 +1,27 @@
+# Base de datos local (cada quien tiene la suya)
+*.db
+*.sqlite3
+
+# Archivos importados por el usuario
+imported_images/
+imported_pptx/
+
+# Configuración local de fondo de letras
+lyrics_bg_path.txt
+
+# Cache de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Entornos virtuales
+venv/
+env/
+.venv/
+
+# VS Code
+.vscode/
+
+# Sistema
+.DS_Store
+Thumbs.db
