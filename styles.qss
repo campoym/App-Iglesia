@@ -1,0 +1,222 @@
+/* 
+   Estilos de Aplicación Web Oscura Premium - Ajustado al Mockup de Referencia
+*/
+
+/* General */
+QWidget {
+    background-color: #0f0f11; /* Negro profundo */
+    color: #f4f4f5; /* Texto Zinc 100 */
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    font-size: 13px;
+}
+
+/* Barra de Navegación Superior */
+QFrame#topNavBar {
+    background-color: #18181b; /* Zinc 900 */
+    border-bottom: 1px solid #27272a;
+    min-height: 50px;
+    max-height: 50px;
+    padding: 0px 10px;
+}
+
+QPushButton#navBtn {
+    background-color: transparent;
+    color: #a1a1aa;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+QPushButton#navBtn:hover {
+    background-color: #27272a;
+    color: #fafafa;
+}
+
+QPushButton#navBtn[active="true"] {
+    background-color: #3f3f46;
+    color: #ffffff;
+}
+
+/* Paneles del Contenedor (Misma tonalidad que el Mockup) */
+QFrame#previewPanel, QFrame#libraryPanel {
+    background-color: #1c1c1e; /* Gris oscuro del panel */
+    border: 1px solid #2c2c2e;
+    border-radius: 12px;
+}
+
+/* Cabecera del Preview */
+QLabel#previewHeaderTitle {
+    color: #71717a;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: transparent;
+}
+
+QLabel#previewSongTitle {
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: bold;
+    background: transparent;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+/* Buscador Redondeado */
+QLineEdit#searchBar {
+    background-color: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 20px;
+    color: #ffffff;
+    padding: 10px 18px;
+    font-size: 14px;
+}
+
+QLineEdit#searchBar:focus {
+    border: 1px solid #6366f1;
+}
+
+/* Listas de la biblioteca y de previsualización */
+QListWidget {
+    background-color: transparent;
+    border: none;
+    outline: 0;
+}
+
+QListWidget::item {
+    background-color: transparent;
+    padding: 0px;
+    margin: 0px;
+}
+
+/* Separación entre tarjetas de previsualización */
+QListWidget#previewList::item {
+    margin-bottom: 6px;
+}
+
+/* Botón estilo píldora para agregar al guión */
+QPushButton#addToGuionBtn {
+    background-color: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 14px;
+    padding: 6px 14px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+QPushButton#addToGuionBtn:hover {
+    background-color: #1d4ed8;
+}
+
+/* Controles de salida */
+QPushButton#subtleCtrlBtn {
+    background-color: #27272a;
+    color: #e4e4e7;
+    border: 1px solid #3f3f46;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+QPushButton#subtleCtrlBtn:hover {
+    background-color: #3f3f46;
+    color: #ffffff;
+}
+
+QPushButton#subtleCtrlBtnDanger {
+    background-color: #451a1a;
+    color: #fca5a5;
+    border: 1px solid #7f1d1d;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+QPushButton#subtleCtrlBtnDanger:hover {
+    background-color: #7f1d1d;
+}
+
+/* Pantalla de Proyección OBS */
+QFrame#obsContainerFrame {
+    background-color: #000000;
+    border: 2px solid #27272a;
+    border-radius: 8px;
+}
+
+QLabel#obsLabelTitle {
+    color: #52525b;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    background: transparent;
+}
+
+QLabel#obsFooterTitle {
+    color: #71717a;
+    font-size: 12px;
+    font-weight: 500;
+    background: transparent;
+}
+
+QPushButton#helpRoundBtn {
+    background-color: #27272a;
+    color: #a1a1aa;
+    border: none;
+    border-radius: 12px;
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+QPushButton#helpRoundBtn:hover {
+    background-color: #3f3f46;
+    color: #ffffff;
+}
+
+/* Scrollbars Oscuros */
+QScrollBar:vertical {
+    border: none;
+    background: #18181b;
+    width: 6px;
+    margin: 0px;
+    border-radius: 3px;
+}
+
+QScrollBar::handle:vertical {
+    background: #3f3f46;
+    min-height: 20px;
+    border-radius: 3px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #52525b;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: none;
+    background: none;
+}
+
+/* Botón de importación de imágenes */
+QPushButton#importBtn {
+    background-color: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 20px;
+    padding: 10px 18px;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+QPushButton#importBtn:hover {
+    background-color: #1d4ed8;
+}
