@@ -15,6 +15,7 @@ from PyQt6.QtGui import QPixmap, QColor
 
 import database
 import pptx_helper
+import pdf_helper
 
 # Configurar carpetas de almacenamiento para recursos
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -186,25 +187,36 @@ class LibraryImageRowWidget(QWidget):
 
 
 class LibraryPptxRowWidget(QWidget):
-    """Fila de PowerPoint para la biblioteca. Clickeable directamente."""
-    def __init__(self, title, on_add_clicked, parent=None):
+    """Fila de presentación (PPTX o PDF) para la biblioteca. Clickeable directamente."""
+    def __init__(self, title, on_add_clicked, on_delete_clicked, file_type="pptx", parent=None):
         super().__init__(parent)
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(15, 10, 15, 10)
         layout.setSpacing(12)
         
-        # Icono circular de PowerPoint (naranja oscuro con P blanca)
-        self.icon_lbl = QLabel("P")
+        is_pdf = file_type == "pdf"
+
+        # Icono circular: rojo "PDF" o naranja "P" de PowerPoint
+        self.icon_lbl = QLabel("PDF" if is_pdf else "P")
         self.icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_lbl.setFixedSize(36, 36)
-        self.icon_lbl.setStyleSheet("""
-            background-color: #7c2d12; 
-            color: #ff7a59; 
-            border-radius: 18px; 
-            font-size: 15px;
-            font-weight: bold;
-        """)
+        if is_pdf:
+            self.icon_lbl.setStyleSheet("""
+                background-color: #7f1d1d; 
+                color: #fca5a5; 
+                border-radius: 18px; 
+                font-size: 10px;
+                font-weight: bold;
+            """)
+        else:
+            self.icon_lbl.setStyleSheet("""
+                background-color: #7c2d12; 
+                color: #ff7a59; 
+                border-radius: 18px; 
+                font-size: 15px;
+                font-weight: bold;
+            """)
         layout.addWidget(self.icon_lbl)
         
         # Textos de título
@@ -215,7 +227,7 @@ class LibraryPptxRowWidget(QWidget):
         self.title_lbl.setStyleSheet("color: #fafafa; font-weight: bold; font-size: 14px; background: transparent;")
         text_layout.addWidget(self.title_lbl)
         
-        self.sub_lbl = QLabel("Presentación PowerPoint")
+        self.sub_lbl = QLabel("Documento PDF" if is_pdf else "Presentación PowerPoint")
         self.sub_lbl.setStyleSheet("color: #a1a1aa; font-size: 11px; background: transparent;")
         text_layout.addWidget(self.sub_lbl)
         
@@ -227,6 +239,28 @@ class LibraryPptxRowWidget(QWidget):
         self.title_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.sub_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         
+        # Botón Eliminar
+        self.del_btn = QPushButton("🗑")
+        self.del_btn.setFixedSize(30, 30)
+        self.del_btn.setToolTip("Eliminar presentación")
+        self.del_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27272a;
+                color: #a1a1aa;
+                border: 1px solid #3f3f46;
+                border-radius: 6px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #7f1d1d;
+                color: #fca5a5;
+                border-color: #7f1d1d;
+            }
+        """)
+        self.del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.del_btn.clicked.connect(on_delete_clicked)
+        layout.addWidget(self.del_btn)
+
         # Botón para añadir al guión
         self.add_btn = QPushButton("+ Guión")
         self.add_btn.setObjectName("addToGuionBtn")
@@ -1436,8 +1470,9 @@ class MainWindow(QMainWindow):
         self.bible_current_book = book_name
         self.load_bible_chapters(book_name)
 
-    def load_bible_chapters(self, book_name):
-        """Carga el grid de capítulos disponibles para el libro/versión actual."""
+    def load_bible_chapters(self, book_name, highlight_chapter=None):
+        """Carga el grid de capítulos disponibles para el libro/versión actual.
+        Si highlight_chapter se especifica, ese botón queda resaltado en verde."""
         self.bible_chapters_label.setText(f"Capítulos · {book_name}")
 
         # Limpiar grid existente
@@ -1461,26 +1496,38 @@ class MainWindow(QMainWindow):
             self.bible_chapters_grid.addWidget(empty_lbl, 0, 0)
             return
 
+        normal_style = """
+            QPushButton {
+                background-color: #27272a;
+                color: #e4e4e7;
+                border: 1px solid #3f3f46;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3f3f46;
+                color: #ffffff;
+            }
+        """
+        active_style = """
+            QPushButton {
+                background-color: #0F6E56;
+                color: #ffffff;
+                border: 1px solid #0F6E56;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+        """
+
         cols = 6
         for idx, chapter_num in enumerate(chapters):
             row, col = divmod(idx, cols)
             btn = QPushButton(str(chapter_num))
             btn.setFixedSize(48, 44)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #27272a;
-                    color: #e4e4e7;
-                    border: 1px solid #3f3f46;
-                    border-radius: 8px;
-                    font-size: 13px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #3f3f46;
-                    color: #ffffff;
-                }
-            """)
+            btn.setStyleSheet(active_style if chapter_num == highlight_chapter else normal_style)
             btn.clicked.connect(lambda checked, b=book_name, c=chapter_num: self.load_bible_chapter_to_preview(b, c))
             self.bible_chapters_grid.addWidget(btn, row, col)
 
@@ -1499,13 +1546,6 @@ class MainWindow(QMainWindow):
             return
 
         book_name, chapter, verse = parsed
-
-        # Sincronizar selector de libro
-        self.bible_current_book = book_name
-        self.bible_book_combo.blockSignals(True)
-        self.bible_book_combo.setCurrentText(book_name)
-        self.bible_book_combo.blockSignals(False)
-
         self.load_bible_chapter_to_preview(book_name, chapter, focus_verse=verse)
 
     def _parse_bible_reference(self, query):
@@ -1531,7 +1571,9 @@ class MainWindow(QMainWindow):
         return None
 
     def load_bible_chapter_to_preview(self, book_name, chapter_num, focus_verse=None):
-        """Carga todos los versículos de un capítulo en la Preview izquierda."""
+        """Carga todos los versículos de un capítulo en la Preview izquierda.
+        También sincroniza el selector de libro y el grid de capítulos visualmente,
+        sin importar si la llamada vino de un click manual o del buscador."""
         conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
@@ -1544,6 +1586,16 @@ class MainWindow(QMainWindow):
         if not verses:
             QMessageBox.warning(self, "Sin contenido", f"No hay versículos para {book_name} {chapter_num} en {self.bible_current_version}.")
             return
+
+        # Sincronizar estado interno + combo de libro (sin disparar su señal para evitar loops)
+        self.bible_current_book = book_name
+        if self.bible_book_combo.currentText() != book_name:
+            self.bible_book_combo.blockSignals(True)
+            self.bible_book_combo.setCurrentText(book_name)
+            self.bible_book_combo.blockSignals(False)
+
+        # Refrescar grid de capítulos con el capítulo actual resaltado en verde
+        self.load_bible_chapters(book_name, highlight_chapter=chapter_num)
 
         chapter_title = f"{book_name} {chapter_num}"
         self.active_item_title.setText(chapter_title)
@@ -1759,15 +1811,15 @@ class MainWindow(QMainWindow):
         top_layout = QHBoxLayout()
         top_layout.setSpacing(10)
 
-        # Buscador de PPTX
+        # Buscador de presentaciones
         self.pptx_search = QLineEdit()
         self.pptx_search.setObjectName("searchBar")
         self.pptx_search.setPlaceholderText("🔎 Buscar presentaciones...")
         self.pptx_search.textChanged.connect(self.filter_pptx)
         top_layout.addWidget(self.pptx_search)
 
-        # Botón de importar PPTX
-        self.import_pptx_btn = QPushButton("Importar PPTX")
+        # Botón de importar PPTX o PDF
+        self.import_pptx_btn = QPushButton("Importar PPTX / PDF")
         self.import_pptx_btn.setObjectName("importBtn")
         self.import_pptx_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.import_pptx_btn.clicked.connect(self.import_pptx_from_pc)
@@ -1810,10 +1862,17 @@ class MainWindow(QMainWindow):
             
             def make_add_callback(pid=pptx_id, pname=name):
                 return lambda: self.add_pptx_to_guion(pid, pname)
+
+            def make_delete_callback(pid=pptx_id, pname=name):
+                return lambda: self.delete_pptx(pid, pname)
+
+            file_type = "pdf" if name.lower().endswith(".pdf") else "pptx"
                 
             widget = LibraryPptxRowWidget(
                 title=name,
-                on_add_clicked=make_add_callback()
+                on_add_clicked=make_add_callback(),
+                on_delete_clicked=make_delete_callback(),
+                file_type=file_type
             )
             item.setSizeHint(widget.minimumSizeHint())
             self.pptx_list.setItemWidget(item, widget)
@@ -1823,11 +1882,51 @@ class MainWindow(QMainWindow):
     def filter_pptx(self):
         self.load_pptx_library(self.pptx_search.text())
 
+    def delete_pptx(self, pptx_id, name):
+        reply = QMessageBox.question(
+            self,
+            "Eliminar presentación",
+            f"¿Estás seguro que quieres eliminar «{name}»?\nEsta acción no se puede deshacer.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        conn = sqlite3.connect(database.DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT file_path FROM pptx_files WHERE id = ?", (pptx_id,))
+        row = cursor.fetchone()
+        cursor.execute("DELETE FROM pptx_files WHERE id = ?", (pptx_id,))
+        conn.commit()
+        conn.close()
+
+        # Borrar también el archivo original y la carpeta de diapositivas generadas en disco
+        if row:
+            file_path = row[0]
+            if file_path:
+                abs_file_path = os.path.join(PROJECT_DIR, file_path)
+                if os.path.exists(abs_file_path):
+                    try:
+                        os.remove(abs_file_path)
+                    except Exception:
+                        pass
+
+            slides_dir = os.path.join(PROJECT_DIR, "imported_pptx", f"pptx_{pptx_id}_slides")
+            if os.path.exists(slides_dir):
+                try:
+                    shutil.rmtree(slides_dir)
+                except Exception:
+                    pass
+
+        self.preview_list.clear()
+        self.load_pptx_library(self.pptx_search.text())
+
     def import_pptx_from_pc(self):
         file_dialog = QFileDialog(self)
-        file_dialog.setWindowTitle("Seleccionar Presentaciones PowerPoint")
+        file_dialog.setWindowTitle("Seleccionar Presentaciones (PowerPoint o PDF)")
         file_dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
-        file_dialog.setNameFilter("Presentaciones (*.pptx *.ppt)")
+        file_dialog.setNameFilter("Presentaciones (*.pptx *.ppt *.pdf)")
         
         if file_dialog.exec():
             selected_files = file_dialog.selectedFiles()
@@ -1842,34 +1941,46 @@ class MainWindow(QMainWindow):
             cursor = conn.cursor()
             
             imported_count = 0
+            failed_files = []
+
             for file_path in selected_files:
                 if not os.path.exists(file_path):
                     continue
                     
                 base_name = os.path.basename(file_path)
+                file_ext = os.path.splitext(base_name)[1].lower()
                 
                 # Registrar primero en la DB para obtener el ID único
                 cursor.execute("INSERT INTO pptx_files (name, file_path) VALUES (?, ?)", (base_name, ""))
                 pptx_id = cursor.lastrowid
                 
                 # Crear ruta de destino con el ID para evitar colisiones
-                dest_pptx_name = f"pptx_{pptx_id}{os.path.splitext(base_name)[1]}"
-                dest_pptx_path = os.path.join(imported_dir, dest_pptx_name)
+                dest_name = f"pptx_{pptx_id}{file_ext}"
+                dest_path = os.path.join(imported_dir, dest_name)
                 
                 try:
-                    # Copiar presentación original
-                    shutil.copy2(file_path, dest_pptx_path)
+                    # Copiar archivo original (pptx, ppt o pdf)
+                    shutil.copy2(file_path, dest_path)
                     
                     # Guardar la ruta relativa en la base de datos
-                    relative_path = os.path.join("imported_pptx", dest_pptx_name)
+                    relative_path = os.path.join("imported_pptx", dest_name)
                     cursor.execute("UPDATE pptx_files SET file_path = ? WHERE id = ?", (relative_path, pptx_id))
                     
-                    # Convertir diapositivas a imágenes en una carpeta dedicada
+                    # Convertir a imágenes en una carpeta dedicada, según el tipo de archivo
                     slides_dir = os.path.join(imported_dir, f"pptx_{pptx_id}_slides")
-                    pptx_helper.convert_pptx_to_images(dest_pptx_path, slides_dir)
-                    
-                    imported_count += 1
+
+                    if file_ext == ".pdf":
+                        slide_images = pdf_helper.convert_pdf_to_images(dest_path, slides_dir)
+                    else:
+                        slide_images = pptx_helper.convert_pptx_to_images(dest_path, slides_dir)
+
+                    if not slide_images:
+                        failed_files.append(base_name)
+                    else:
+                        imported_count += 1
+
                 except Exception as e:
+                    failed_files.append(base_name)
                     QMessageBox.warning(self, "Error de Importación", f"No se pudo procesar {base_name}: {str(e)}")
             
             conn.commit()
@@ -1877,7 +1988,16 @@ class MainWindow(QMainWindow):
             
             if imported_count > 0:
                 self.load_pptx_library()
-                QMessageBox.information(self, "Importación de PPTX", f"Se importaron y convirtieron {imported_count} presentaciones exitosamente.")
+                QMessageBox.information(self, "Importación", f"Se importaron y convirtieron {imported_count} presentaciones exitosamente.")
+
+            if failed_files:
+                names = "\n".join(failed_files)
+                QMessageBox.warning(
+                    self, "Algunos archivos no se pudieron convertir",
+                    f"No se generaron diapositivas para:\n{names}\n\n"
+                    f"Tip: los archivos .ppt antiguos requieren Microsoft PowerPoint instalado. "
+                    f"Prueba exportando a .pptx o .pdf."
+                )
 
     def on_library_pptx_clicked(self, item):
         data = item.data(Qt.ItemDataRole.UserRole)
