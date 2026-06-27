@@ -5,8 +5,8 @@ import sqlite3
 import re
 import unicodedata
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QListWidget, QListWidgetItem, QPushButton, QLineEdit, QLabel, 
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QListWidget, QListWidgetItem, QPushButton, QLineEdit, QLabel,
     QFileDialog, QMessageBox, QSplitter, QFrame, QGridLayout, QStackedWidget,
     QDialog, QTextEdit, QScrollArea, QComboBox, QSizePolicy
 )
@@ -40,6 +40,7 @@ def remove_accents(text):
 
 class PreviewListWidget(QListWidget):
     """QListWidget personalizado para soportar navegación por teclado con proyección inmediata."""
+
     def keyPressEvent(self, event):
         super().keyPressEvent(event)
         if event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_PageUp, Qt.Key.Key_PageDown, Qt.Key.Key_Home, Qt.Key.Key_End):
@@ -53,39 +54,44 @@ class PreviewListWidget(QListWidget):
 
 class PreviewImageCardWidget(QFrame):
     """Tarjeta de previsualización individual para imágenes en el panel izquierdo."""
+
     def __init__(self, header, image_path, parent=None):
         super().__init__(parent)
         self.setObjectName("previewCard")
-        
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 60, 15, 60)
         layout.setSpacing(60)
-        
+
         self.header_label = QLabel(header)
         self.header_label.setObjectName("cardHeader")
         layout.addWidget(self.header_label)
-        
+
         # Etiqueta para la miniatura de la imagen
         self.thumb_label = QLabel()
-        self.thumb_label.setFixedSize(160, 90) # Relación de aspecto típica 16:9
-        self.thumb_label.setStyleSheet("background-color: #1a1a1e; border-radius: 4px;")
+        # Relación de aspecto típica 16:9
+        self.thumb_label.setFixedSize(160, 90)
+        self.thumb_label.setStyleSheet(
+            "background-color: #1a1a1e; border-radius: 4px;")
         self.thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+
         # Cargar y escalar la imagen
         pixmap = QPixmap(image_path)
         if not pixmap.isNull():
-            scaled = pixmap.scaled(self.thumb_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            scaled = pixmap.scaled(self.thumb_label.size(
+            ), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             self.thumb_label.setPixmap(scaled)
-        layout.addWidget(self.thumb_label, alignment=Qt.AlignmentFlag.AlignCenter)
-        
+        layout.addWidget(self.thumb_label,
+                         alignment=Qt.AlignmentFlag.AlignCenter)
+
         self.name_label = QLabel(os.path.basename(image_path))
-        self.name_label.setObjectName("cardLyrics") # Reusar estilo de lyrics
+        self.name_label.setObjectName("cardLyrics")  # Reusar estilo de lyrics
         self.name_label.setWordWrap(True)
         self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.name_label)
-        
+
         self.set_selected(False)
-        
+
     def set_selected(self, is_selected):
         if is_selected:
             self.setStyleSheet("""
@@ -135,13 +141,14 @@ class PreviewImageCardWidget(QFrame):
 
 class LibraryImageRowWidget(QWidget):
     """Fila de imagen para la biblioteca. Clickeable directamente."""
+
     def __init__(self, title, file_path, on_add_clicked, parent=None):
         super().__init__(parent)
-        
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(15, 10, 15, 10)
         layout.setSpacing(12)
-        
+
         # Miniatura de la imagen
         self.thumb_lbl = QLabel()
         self.thumb_lbl.setFixedSize(48, 36)
@@ -150,34 +157,40 @@ class LibraryImageRowWidget(QWidget):
             background-color: #1a1a1e; 
             border-radius: 4px;
         """)
-        
+
         # Cargar miniatura
         pixmap = QPixmap(file_path)
         if not pixmap.isNull():
-            scaled = pixmap.scaled(self.thumb_lbl.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            scaled = pixmap.scaled(self.thumb_lbl.size(
+            ), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             self.thumb_lbl.setPixmap(scaled)
         layout.addWidget(self.thumb_lbl)
-        
+
         # Textos de título
         text_layout = QVBoxLayout()
         text_layout.setSpacing(2)
-        
+
         self.title_lbl = QLabel(title)
-        self.title_lbl.setStyleSheet("color: #fafafa; font-weight: bold; font-size: 14px; background: transparent;")
+        self.title_lbl.setStyleSheet(
+            "color: #fafafa; font-weight: bold; font-size: 14px; background: transparent;")
         text_layout.addWidget(self.title_lbl)
-        
+
         self.sub_lbl = QLabel("Imagen Local")
-        self.sub_lbl.setStyleSheet("color: #a1a1aa; font-size: 11px; background: transparent;")
+        self.sub_lbl.setStyleSheet(
+            "color: #a1a1aa; font-size: 11px; background: transparent;")
         text_layout.addWidget(self.sub_lbl)
-        
+
         layout.addLayout(text_layout)
         layout.addStretch()
-        
+
         # Hacer transparentes para eventos del ratón
-        self.thumb_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.title_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.sub_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        
+        self.thumb_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.title_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.sub_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
         # Botón para añadir al guión
         self.add_btn = QPushButton("+ Guión")
         self.add_btn.setObjectName("addToGuionBtn")
@@ -188,13 +201,14 @@ class LibraryImageRowWidget(QWidget):
 
 class LibraryPptxRowWidget(QWidget):
     """Fila de presentación (PPTX o PDF) para la biblioteca. Clickeable directamente."""
+
     def __init__(self, title, on_add_clicked, on_delete_clicked, file_type="pptx", parent=None):
         super().__init__(parent)
-        
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(15, 10, 15, 10)
         layout.setSpacing(12)
-        
+
         is_pdf = file_type == "pdf"
 
         # Icono circular: rojo "PDF" o naranja "P" de PowerPoint
@@ -218,27 +232,33 @@ class LibraryPptxRowWidget(QWidget):
                 font-weight: bold;
             """)
         layout.addWidget(self.icon_lbl)
-        
+
         # Textos de título
         text_layout = QVBoxLayout()
         text_layout.setSpacing(2)
-        
+
         self.title_lbl = QLabel(title)
-        self.title_lbl.setStyleSheet("color: #fafafa; font-weight: bold; font-size: 14px; background: transparent;")
+        self.title_lbl.setStyleSheet(
+            "color: #fafafa; font-weight: bold; font-size: 14px; background: transparent;")
         text_layout.addWidget(self.title_lbl)
-        
-        self.sub_lbl = QLabel("Documento PDF" if is_pdf else "Presentación PowerPoint")
-        self.sub_lbl.setStyleSheet("color: #a1a1aa; font-size: 11px; background: transparent;")
+
+        self.sub_lbl = QLabel(
+            "Documento PDF" if is_pdf else "Presentación PowerPoint")
+        self.sub_lbl.setStyleSheet(
+            "color: #a1a1aa; font-size: 11px; background: transparent;")
         text_layout.addWidget(self.sub_lbl)
-        
+
         layout.addLayout(text_layout)
         layout.addStretch()
-        
+
         # Hacer que los clicks en los textos e icono se transfieran al QListWidget
-        self.icon_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.title_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.sub_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        
+        self.icon_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.title_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.sub_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
         # Botón Eliminar
         self.del_btn = QPushButton("🗑")
         self.del_btn.setFixedSize(30, 30)
@@ -271,23 +291,24 @@ class LibraryPptxRowWidget(QWidget):
 
 class PreviewCardWidget(QFrame):
     """Tarjeta de previsualización individual para las estrofas/diapositivas en el panel izquierdo."""
+
     def __init__(self, header, lyrics, parent=None):
         super().__init__(parent)
         self.setObjectName("previewCard")
-        
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 12, 15, 12)
         layout.setSpacing(6)
-        
+
         self.header_label = QLabel(header)
         self.header_label.setObjectName("cardHeader")
         layout.addWidget(self.header_label)
-        
+
         self.lyrics_label = QLabel(lyrics)
         self.lyrics_label.setObjectName("cardLyrics")
         self.lyrics_label.setWordWrap(True)
         layout.addWidget(self.lyrics_label)
-        
+
         self.set_selected(False)
 
     def set_selected(self, is_selected):
@@ -339,13 +360,14 @@ class PreviewCardWidget(QFrame):
 
 class LibrarySongRowWidget(QWidget):
     """Fila de canto para la biblioteca. Sin botón Proyectar. Clickeable directamente."""
+
     def __init__(self, title, category, on_add_clicked, on_edit_clicked, on_delete_clicked, parent=None):
         super().__init__(parent)
-        
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(15, 10, 15, 10)
         layout.setSpacing(12)
-        
+
         # Icono circular de música
         self.icon_lbl = QLabel("♫")
         self.icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -358,27 +380,32 @@ class LibrarySongRowWidget(QWidget):
             font-weight: bold;
         """)
         layout.addWidget(self.icon_lbl)
-        
+
         # Textos de título y categoría
         text_layout = QVBoxLayout()
         text_layout.setSpacing(2)
-        
+
         self.title_lbl = QLabel(title)
-        self.title_lbl.setStyleSheet("color: #fafafa; font-weight: bold; font-size: 14px; background: transparent;")
+        self.title_lbl.setStyleSheet(
+            "color: #fafafa; font-weight: bold; font-size: 14px; background: transparent;")
         text_layout.addWidget(self.title_lbl)
-        
+
         self.category_lbl = QLabel(category)
-        self.category_lbl.setStyleSheet("color: #a1a1aa; font-size: 11px; background: transparent;")
+        self.category_lbl.setStyleSheet(
+            "color: #a1a1aa; font-size: 11px; background: transparent;")
         text_layout.addWidget(self.category_lbl)
-        
+
         layout.addLayout(text_layout)
         layout.addStretch()
-        
+
         # Transparentes para mouse events
-        self.icon_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.title_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.category_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        
+        self.icon_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.title_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.category_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
         # Botón Editar
         self.edit_btn = QPushButton("✏")
         self.edit_btn.setFixedSize(30, 30)
@@ -432,15 +459,17 @@ class LibrarySongRowWidget(QWidget):
 
 class CleanProjectionWidget(QFrame):
     """Widget de proyección OBS limpio que renderiza el contenido."""
+
     def __init__(self, is_external=False, parent=None):
         super().__init__(parent)
         self.setObjectName("obsContainerFrame")
         # Establecer fondo transparente para que nuestro paintEvent controle el dibujado completo
-        self.setStyleSheet("background-color: transparent; border: none; border-radius: 0px;")
-        
+        self.setStyleSheet(
+            "background-color: transparent; border: none; border-radius: 0px;")
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(20, 15, 20, 15)
-        
+
         # Línea superior (Etiqueta OBS)
         top_layout = QHBoxLayout()
         self.obs_title = QLabel("VENTANA OBS")
@@ -448,9 +477,9 @@ class CleanProjectionWidget(QFrame):
         top_layout.addWidget(self.obs_title)
         top_layout.addStretch()
         main_layout.addLayout(top_layout)
-        
+
         main_layout.addStretch()
-        
+
         # Texto central
         self.text_label = QLabel(self)
         self.text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -462,77 +491,81 @@ class CleanProjectionWidget(QFrame):
             background: transparent;
         """)
         main_layout.addWidget(self.text_label)
-        
+
         main_layout.addStretch()
-        
+
         # Línea inferior (Pie de página y ayuda)
         bottom_layout = QHBoxLayout()
         bottom_layout.addStretch()
-        
+
         self.footer_label = QLabel("")
         self.footer_label.setObjectName("obsFooterTitle")
         bottom_layout.addWidget(self.footer_label)
-        
+
         bottom_layout.addStretch()
-        
+
         self.help_btn = QPushButton("?")
         self.help_btn.setObjectName("helpRoundBtn")
         bottom_layout.addWidget(self.help_btn)
-        
+
         main_layout.addLayout(bottom_layout)
- 
+
         # Ocultar controles administrativos en ventana externa
         if is_external:
             self.obs_title.hide()
             self.help_btn.hide()
- 
+
         self.raw_pixmap = None
         self.general_bg_pixmap = None
         self.current_song_title = ""
         self.current_slide_name = ""
- 
+
     def display_text(self, text, slide_name="", song_title=""):
         self.raw_pixmap = None
         self.text_label.setText(text)
         self.text_label.show()
         self.update()
-        
+
         if song_title:
             self.current_song_title = song_title
         if slide_name:
             self.current_slide_name = slide_name
-            
+
         if self.current_slide_name and self.current_song_title:
-            self.footer_label.setText(f"{self.current_slide_name} · {self.current_song_title}")
+            self.footer_label.setText(
+                f"{self.current_slide_name} · {self.current_song_title}")
         else:
-            self.footer_label.setText(self.current_song_title or self.current_slide_name)
- 
+            self.footer_label.setText(
+                self.current_song_title or self.current_slide_name)
+
     def display_image(self, pixmap_path, slide_name="", song_title=""):
         self.text_label.hide()
         self.raw_pixmap = QPixmap(pixmap_path)
         self.update()
-        
+
         if song_title:
             self.current_song_title = song_title
         if slide_name:
             self.current_slide_name = slide_name
-            
+
         if self.current_slide_name and self.current_song_title:
-            self.footer_label.setText(f"{self.current_slide_name} · {self.current_song_title}")
+            self.footer_label.setText(
+                f"{self.current_slide_name} · {self.current_song_title}")
         else:
-            self.footer_label.setText(self.current_song_title or self.current_slide_name)
- 
+            self.footer_label.setText(
+                self.current_song_title or self.current_slide_name)
+
     def set_black_screen(self):
         self.text_label.hide()
         self.raw_pixmap = None
         self.footer_label.setText("")
         self.update()
- 
+
     def clear_text_only(self):
         self.text_label.setText("")
         self.footer_label.setText("")
         self.update()
- 
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.update()
@@ -540,11 +573,11 @@ class CleanProjectionWidget(QFrame):
     def paintEvent(self, event):
         from PyQt6.QtGui import QPainter
         painter = QPainter(self)
-        
+
         rect = self.contentsRect()
         # Dibujar fondo negro sólido siempre
         painter.fillRect(rect, Qt.GlobalColor.black)
-        
+
         # Si hay imagen de fondo general (para letras), pintarla primero
         if self.general_bg_pixmap and not self.general_bg_pixmap.isNull() and self.raw_pixmap is None:
             scaled = self.general_bg_pixmap.scaled(
@@ -555,7 +588,7 @@ class CleanProjectionWidget(QFrame):
             x = rect.x() + (rect.width() - scaled.width()) // 2
             y = rect.y() + (rect.height() - scaled.height()) // 2
             painter.drawPixmap(x, y, scaled)
-        
+
         # Si hay una imagen/diapositiva cargada, dibujarla encima
         if self.raw_pixmap and not self.raw_pixmap.isNull():
             scaled = self.raw_pixmap.scaled(
@@ -566,22 +599,23 @@ class CleanProjectionWidget(QFrame):
             x = rect.x() + (rect.width() - scaled.width()) // 2
             y = rect.y() + (rect.height() - scaled.height()) // 2
             painter.drawPixmap(x, y, scaled)
-            
+
         painter.end()
         super().paintEvent(event)
 
 
 class ProjectionWindow(QWidget):
     """Ventana externa independiente (Proyector/Pantalla Secundaria)."""
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Salida de Proyección (Pantalla Completa)")
         self.setStyleSheet("background-color: #000000;")
         self.resize(800, 600)
-        
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.projection_widget = CleanProjectionWidget(is_external=True)
         layout.addWidget(self.projection_widget)
 
@@ -770,6 +804,7 @@ class SectionBlockWidget(QFrame):
 
 class SongEditorDialog(QDialog):
     """Diálogo para crear o editar un canto."""
+
     def __init__(self, parent=None, song_id=None):
         super().__init__(parent)
         self.song_id = song_id
@@ -833,7 +868,8 @@ class SongEditorDialog(QDialog):
         left_col = QVBoxLayout()
         lbl_cat = QLabel("CATEGORÍA")
         self.category_input = QLineEdit()
-        self.category_input.setPlaceholderText("Ej. Alabanza, Adoración, Himno")
+        self.category_input.setPlaceholderText(
+            "Ej. Alabanza, Adoración, Himno")
         left_col.addWidget(lbl_cat)
         left_col.addWidget(self.category_input)
         meta_row.addLayout(left_col)
@@ -865,7 +901,8 @@ class SongEditorDialog(QDialog):
         # Scroll area para los bloques
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.sections_container = QWidget()
         self.sections_container.setStyleSheet("background: transparent;")
@@ -882,7 +919,8 @@ class SongEditorDialog(QDialog):
         add_row.setSpacing(8)
 
         for label, sec_type in [("+ Título", "Título"), ("+ Estrofa", "Estrofa"), ("+ Coro", "Coro"), ("+ Puente", "Puente")]:
-            colors = SectionBlockWidget.COLORS.get(sec_type, SectionBlockWidget.COLORS["Estrofa"])
+            colors = SectionBlockWidget.COLORS.get(
+                sec_type, SectionBlockWidget.COLORS["Estrofa"])
             btn = QPushButton(label)
             btn.setStyleSheet(f"""
                 QPushButton {{
@@ -900,7 +938,8 @@ class SongEditorDialog(QDialog):
                 }}
             """)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda checked, st=sec_type: self.add_section(st))
+            btn.clicked.connect(
+                lambda checked, st=sec_type: self.add_section(st))
             add_row.addWidget(btn)
 
         add_row.addStretch()
@@ -954,7 +993,8 @@ class SongEditorDialog(QDialog):
             self.add_section("Coro")
 
     def add_section(self, sec_type="Estrofa", number=1, content=""):
-        existing = [w for w in self.section_widgets if w.type_combo.currentText() == sec_type]
+        existing = [
+            w for w in self.section_widgets if w.type_combo.currentText() == sec_type]
         auto_num = len(existing) + 1 if sec_type != "Título" else 1
 
         block = SectionBlockWidget(
@@ -982,7 +1022,8 @@ class SongEditorDialog(QDialog):
     def _load_existing_song(self):
         conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT title, category, tone, lyrics FROM songs WHERE id = ?", (self.song_id,))
+        cursor.execute(
+            "SELECT title, category, tone, lyrics FROM songs WHERE id = ?", (self.song_id,))
         row = cursor.fetchone()
         conn.close()
         if not row:
@@ -1013,10 +1054,12 @@ class SongEditorDialog(QDialog):
     def save_song(self):
         title = self.title_input.text().strip()
         if not title:
-            QMessageBox.warning(self, "Campo requerido", "El título del canto es obligatorio.")
+            QMessageBox.warning(self, "Campo requerido",
+                                "El título del canto es obligatorio.")
             return
         if not self.section_widgets:
-            QMessageBox.warning(self, "Sin secciones", "Agrega al menos una sección al canto.")
+            QMessageBox.warning(self, "Sin secciones",
+                                "Agrega al menos una sección al canto.")
             return
 
         category = self.category_input.text().strip()
@@ -1059,7 +1102,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Cerebro de Proyección Multimedia - Iglesia App")
         self.resize(1200, 750)
-        
+
         self.load_styles()
 
         # Datos del Guion (en memoria para la sesión)
@@ -1072,8 +1115,8 @@ class MainWindow(QMainWindow):
 
         # Estado de la proyección
         self.active_item_data = None
-        self.projection_window = None  
-        
+        self.projection_window = None
+
         self.current_projection_mode = "black"
         self.last_projected_mode = None
         self.last_projected_text = ""
@@ -1096,7 +1139,7 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
-        
+
         # Layout vertical: Barra superior + Cuerpo principal
         window_layout = QVBoxLayout(main_widget)
         window_layout.setContentsMargins(0, 0, 0, 0)
@@ -1150,11 +1193,13 @@ class MainWindow(QMainWindow):
         preview_header_lbl = QLabel("PREVIEW")
         preview_header_lbl.setObjectName("previewHeaderTitle")
         header_row.addWidget(preview_header_lbl)
-        
+
         click_instruction_lbl = QLabel("click bloque → proyecta")
-        click_instruction_lbl.setStyleSheet("color: #71717a; font-size: 11px; font-weight: normal; background: transparent;")
-        header_row.addWidget(click_instruction_lbl, alignment=Qt.AlignmentFlag.AlignRight)
-        
+        click_instruction_lbl.setStyleSheet(
+            "color: #71717a; font-size: 11px; font-weight: normal; background: transparent;")
+        header_row.addWidget(click_instruction_lbl,
+                             alignment=Qt.AlignmentFlag.AlignRight)
+
         preview_layout.addLayout(header_row)
 
         self.active_item_title = QLabel("Ningún canto seleccionado")
@@ -1171,7 +1216,8 @@ class MainWindow(QMainWindow):
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.HLine)
         divider.setFrameShadow(QFrame.Shadow.Sunken)
-        divider.setStyleSheet("background-color: #27272a; max-height: 1px; margin: 10px 0px;")
+        divider.setStyleSheet(
+            "background-color: #27272a; max-height: 1px; margin: 10px 0px;")
         preview_layout.addWidget(divider)
 
         controls_layout = QHBoxLayout()
@@ -1194,7 +1240,8 @@ class MainWindow(QMainWindow):
 
         self.btn_toggle_projector = QPushButton("V. Externa")
         self.btn_toggle_projector.setObjectName("subtleCtrlBtn")
-        self.btn_toggle_projector.clicked.connect(self.toggle_projection_window)
+        self.btn_toggle_projector.clicked.connect(
+            self.toggle_projection_window)
         controls_layout.addWidget(self.btn_toggle_projector)
 
         self.btn_lyrics_bg = QPushButton("Fondo Letra")
@@ -1213,12 +1260,12 @@ class MainWindow(QMainWindow):
 
         # Stacked Widget para la biblioteca (Cerebro)
         self.library_stack = QStackedWidget()
-        
+
         self.setup_songs_page()
         self.setup_bible_page()
         self.setup_images_page()
         self.setup_pptx_page()
-        self.setup_placeholder_page("Guión")
+        self.setup_guion_page()
 
         right_layout.addWidget(self.library_stack, stretch=2)
 
@@ -1226,8 +1273,8 @@ class MainWindow(QMainWindow):
         self.obs_container = QFrame()
         self.obs_container.setObjectName("obsContainerFrame")
         self.obs_container.setStyleSheet("background-color: #000000;")
-        self.obs_container.setMinimumHeight(320)  
-        
+        self.obs_container.setMinimumHeight(320)
+
         obs_layout = QVBoxLayout(self.obs_container)
         obs_layout.setContentsMargins(0, 0, 0, 0)
         obs_layout.setSpacing(0)
@@ -1242,7 +1289,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(right_widget_wrap)
 
         splitter.setSizes([420, 780])
-        
+
         self.set_active_nav_button("Cantos")
 
     # =========================================================================
@@ -1277,7 +1324,8 @@ class MainWindow(QMainWindow):
         self.songs_list = QListWidget()
         self.songs_list.setObjectName("libraryList")
         self.songs_list.itemClicked.connect(self.on_library_song_clicked)
-        self.songs_list.itemDoubleClicked.connect(self.on_library_song_double_clicked)
+        self.songs_list.itemDoubleClicked.connect(
+            self.on_library_song_double_clicked)
         layout.addWidget(self.songs_list)
 
         self.library_stack.addWidget(container)
@@ -1290,7 +1338,8 @@ class MainWindow(QMainWindow):
 
         lbl = QLabel(f"📖 Sección de {name} (Próximamente)")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setStyleSheet("color: #71717a; font-size: 14px; font-weight: bold;")
+        lbl.setStyleSheet(
+            "color: #71717a; font-size: 14px; font-weight: bold;")
         layout.addWidget(lbl)
 
         self.library_stack.addWidget(container)
@@ -1334,7 +1383,8 @@ class MainWindow(QMainWindow):
         # ---- Buscador (cita rápida) ----
         self.bible_search = QLineEdit()
         self.bible_search.setObjectName("searchBar")
-        self.bible_search.setPlaceholderText("🔎 Buscar cita (ej. Juan 3 16) y Enter...")
+        self.bible_search.setPlaceholderText(
+            "🔎 Buscar cita (ej. Juan 3 16) y Enter...")
         self.bible_search.returnPressed.connect(self.on_bible_search_enter)
         layout.addWidget(self.bible_search)
 
@@ -1363,7 +1413,8 @@ class MainWindow(QMainWindow):
         """)
         self.bible_book_combo.setMinimumWidth(160)
         self._populate_book_combo()
-        self.bible_book_combo.currentTextChanged.connect(self.on_bible_book_changed)
+        self.bible_book_combo.currentTextChanged.connect(
+            self.on_bible_book_changed)
         selector_row.addWidget(self.bible_book_combo)
 
         selector_row.addStretch()
@@ -1375,12 +1426,14 @@ class MainWindow(QMainWindow):
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(self._version_btn_style(False))
-            btn.clicked.connect(lambda checked, v=version: self.on_bible_version_changed(v))
+            btn.clicked.connect(
+                lambda checked, v=version: self.on_bible_version_changed(v))
             selector_row.addWidget(btn)
             self.bible_version_buttons[version] = btn
 
         self.bible_version_buttons["RVR60"].setChecked(True)
-        self.bible_version_buttons["RVR60"].setStyleSheet(self._version_btn_style(True))
+        self.bible_version_buttons["RVR60"].setStyleSheet(
+            self._version_btn_style(True))
 
         layout.addLayout(selector_row)
 
@@ -1396,8 +1449,10 @@ class MainWindow(QMainWindow):
         # ---- Grid de capítulos (scrollable) ----
         self.bible_chapters_scroll = QScrollArea()
         self.bible_chapters_scroll.setWidgetResizable(True)
-        self.bible_chapters_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.bible_chapters_scroll.setStyleSheet("background: transparent; border: none;")
+        self.bible_chapters_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.bible_chapters_scroll.setStyleSheet(
+            "background: transparent; border: none;")
 
         self.bible_chapters_container = QWidget()
         self.bible_chapters_container.setStyleSheet("background: transparent;")
@@ -1449,7 +1504,8 @@ class MainWindow(QMainWindow):
         for book in self.BIBLE_BOOKS_OT:
             self.bible_book_combo.addItem(book)
         self.bible_book_combo.addItem("── Nuevo Testamento ──")
-        self.bible_book_combo.model().item(self.bible_book_combo.count() - 1).setEnabled(False)
+        self.bible_book_combo.model().item(
+            self.bible_book_combo.count() - 1).setEnabled(False)
         for book in self.BIBLE_BOOKS_NT:
             self.bible_book_combo.addItem(book)
         self.bible_book_combo.setCurrentText(self.bible_current_book)
@@ -1491,8 +1547,10 @@ class MainWindow(QMainWindow):
         conn.close()
 
         if not chapters:
-            empty_lbl = QLabel(f"Sin datos para «{book_name}» en {self.bible_current_version}")
-            empty_lbl.setStyleSheet("color: #71717a; font-size: 12px; background: transparent;")
+            empty_lbl = QLabel(
+                f"Sin datos para «{book_name}» en {self.bible_current_version}")
+            empty_lbl.setStyleSheet(
+                "color: #71717a; font-size: 12px; background: transparent;")
             self.bible_chapters_grid.addWidget(empty_lbl, 0, 0)
             return
 
@@ -1527,9 +1585,24 @@ class MainWindow(QMainWindow):
             btn = QPushButton(str(chapter_num))
             btn.setFixedSize(48, 44)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(active_style if chapter_num == highlight_chapter else normal_style)
-            btn.clicked.connect(lambda checked, b=book_name, c=chapter_num: self.load_bible_chapter_to_preview(b, c))
+            btn.setStyleSheet(active_style if chapter_num ==
+                              highlight_chapter else normal_style)
+            btn.clicked.connect(lambda checked, b=book_name,
+                                c=chapter_num: self.load_bible_chapter_to_preview(b, c))
             self.bible_chapters_grid.addWidget(btn, row, col)
+
+    def add_bible_to_guion(self, book, chapter, verse, text):
+        title = f"{book} {chapter}:{verse}"
+        if any(b["book"] == book and b["chapter"] == chapter and b["verse"] == verse
+               for b in self.guion["bible"]):
+            QMessageBox.information(
+                self, "Guión", f"«{title}» ya está en el Guión.")
+            return
+        self.guion["bible"].append({
+            "book": book, "chapter": chapter, "verse": verse,
+            "text": text, "title": title
+        })
+        self.refresh_guion_list()
 
     def on_bible_search_enter(self):
         """Detecta si el texto es una cita válida ('Juan 3 16' o 'Juan 3:16') y navega directo."""
@@ -1546,7 +1619,8 @@ class MainWindow(QMainWindow):
             return
 
         book_name, chapter, verse = parsed
-        self.load_bible_chapter_to_preview(book_name, chapter, focus_verse=verse)
+        self.load_bible_chapter_to_preview(
+            book_name, chapter, focus_verse=verse)
 
     def _parse_bible_reference(self, query):
         """Intenta extraer (libro, capitulo, versiculo) de un texto libre."""
@@ -1584,7 +1658,8 @@ class MainWindow(QMainWindow):
         conn.close()
 
         if not verses:
-            QMessageBox.warning(self, "Sin contenido", f"No hay versículos para {book_name} {chapter_num} en {self.bible_current_version}.")
+            QMessageBox.warning(
+                self, "Sin contenido", f"No hay versículos para {book_name} {chapter_num} en {self.bible_current_version}.")
             return
 
         # Sincronizar estado interno + combo de libro (sin disparar su señal para evitar loops)
@@ -1613,9 +1688,31 @@ class MainWindow(QMainWindow):
                 "header": reference,
                 "song_title": f"{book_name} {chapter_num} · {self.bible_current_version}"
             })
+
+            # Contenedor: tarjeta + botón "+ Guión" a la derecha
+            wrapper = QWidget()
+            wrapper.setStyleSheet("background: transparent;")
+            h = QHBoxLayout(wrapper)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(6)
+
             card_widget = PreviewCardWidget(header=header, lyrics=verse_text)
-            list_item.setSizeHint(card_widget.minimumSizeHint())
-            self.preview_list.setItemWidget(list_item, card_widget)
+            h.addWidget(card_widget, stretch=1)
+
+            wrapper.set_selected = card_widget.set_selected
+
+            guion_btn = QPushButton("+ Guión")
+            guion_btn.setObjectName("addToGuionBtn")
+            guion_btn.setFixedWidth(70)
+            guion_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            guion_btn.clicked.connect(
+                lambda _, b=book_name, c=chapter_num, v=verse_num, t=verse_text:
+                self.add_bible_to_guion(b, c, v, t)
+            )
+            h.addWidget(guion_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+            list_item.setSizeHint(wrapper.minimumSizeHint())
+            self.preview_list.setItemWidget(list_item, wrapper)
 
             if focus_verse and verse_num == focus_verse:
                 focus_item = list_item
@@ -1626,6 +1723,280 @@ class MainWindow(QMainWindow):
             self.preview_list.setCurrentItem(target_item)
             self.preview_list.scrollToItem(target_item)
             self.on_preview_card_clicked(target_item)
+
+    # =========================================================================
+    # MÓDULO DE GUIÓN
+    # =========================================================================
+
+    # Paleta visual por tipo de item
+    GUION_COLORS = {
+        "song":   {"bg": "#1e1b4b", "border": "#6366f1", "icon_bg": "#4f46e5", "icon_fg": "#ffffff", "icon": "♫",  "label": "Canto"},
+        "bible":  {"bg": "#052e16", "border": "#16a34a", "icon_bg": "#15803d", "icon_fg": "#ffffff", "icon": "📖", "label": "Biblia"},
+        "image":  {"bg": "#431407", "border": "#ea580c", "icon_bg": "#c2410c", "icon_fg": "#ffffff", "icon": "🖼", "label": "Imagen"},
+        "pptx":   {"bg": "#3b0764", "border": "#a855f7", "icon_bg": "#9333ea", "icon_fg": "#ffffff", "icon": "🖥", "label": "Presentación"},
+    }
+
+    def setup_guion_page(self):
+        container = QFrame()
+        container.setObjectName("libraryPanel")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+
+        # Header
+        header_row = QHBoxLayout()
+        title_lbl = QLabel("GUIÓN DEL SERVICIO")
+        title_lbl.setStyleSheet(
+            "color: #71717a; font-size: 11px; font-weight: bold; letter-spacing: 0.5px; background: transparent;")
+        header_row.addWidget(title_lbl)
+        header_row.addStretch()
+
+        self.guion_count_lbl = QLabel("0 ítems")
+        self.guion_count_lbl.setStyleSheet(
+            "color: #52525b; font-size: 11px; background: transparent;")
+        header_row.addWidget(self.guion_count_lbl)
+
+        clear_btn = QPushButton("🗑 Limpiar todo")
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27272a;
+                color: #a1a1aa;
+                border: 1px solid #3f3f46;
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-size: 11px;
+            }
+            QPushButton:hover { background-color: #7f1d1d; color: #fca5a5; border-color: #7f1d1d; }
+        """)
+        clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_btn.clicked.connect(self.guion_clear_all)
+        header_row.addWidget(clear_btn)
+
+        layout.addLayout(header_row)
+
+        # Lista del guión
+        self.guion_list = QListWidget()
+        self.guion_list.setObjectName("libraryList")
+        self.guion_list.setSpacing(3)
+        self.guion_list.itemClicked.connect(self.on_guion_item_clicked)
+        self.guion_list.itemDoubleClicked.connect(
+            self.on_guion_item_double_clicked)
+        layout.addWidget(self.guion_list)
+
+        # Estado vacío
+        self.guion_empty_lbl = QLabel(
+            "📋  Agrega cantos, versículos, imágenes o\npresentaciones desde las otras pestañas")
+        self.guion_empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.guion_empty_lbl.setStyleSheet(
+            "color: #52525b; font-size: 13px; background: transparent; line-height: 1.6;")
+        layout.addWidget(self.guion_empty_lbl)
+
+        self.library_stack.addWidget(container)
+
+    def refresh_guion_list(self):
+        """Reconstruye la lista visual del Guión desde self.guion."""
+        self.guion_list.clear()
+
+        all_items = (
+            [("song",  item) for item in self.guion["songs"]] +
+            [("bible", item) for item in self.guion["bible"]] +
+            [("image", item) for item in self.guion["images"]] +
+            [("pptx",  item) for item in self.guion["pptx"]]
+        )
+
+        total = len(all_items)
+        self.guion_count_lbl.setText(
+            f"{total} ítem{'s' if total != 1 else ''}")
+        self.guion_empty_lbl.setVisible(total == 0)
+        self.guion_list.setVisible(total > 0)
+
+        for item_type, item_data in all_items:
+            colors = self.GUION_COLORS[item_type]
+            list_item = QListWidgetItem(self.guion_list)
+            list_item.setData(Qt.ItemDataRole.UserRole, {
+                              "type": item_type, "data": item_data})
+
+            widget = self._make_guion_row(item_type, item_data, colors)
+            list_item.setSizeHint(widget.minimumSizeHint())
+            self.guion_list.setItemWidget(list_item, widget)
+
+    def _make_guion_row(self, item_type, item_data, colors):
+        """Crea el widget visual de una fila del Guión."""
+        row = QFrame()
+        row.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['bg']};
+                border: 1px solid {colors['border']};
+                border-radius: 8px;
+            }}
+        """)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(10)
+
+        # Icono circular
+        icon_lbl = QLabel(colors["icon"])
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setFixedSize(34, 34)
+        icon_lbl.setStyleSheet(f"""
+            background-color: {colors['icon_bg']};
+            color: {colors['icon_fg']};
+            border-radius: 17px;
+            font-size: 14px;
+        """)
+        icon_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        layout.addWidget(icon_lbl)
+
+        # Textos
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+
+        name_lbl = QLabel(item_data.get(
+            "title", item_data.get("name", "Sin título")))
+        name_lbl.setStyleSheet(
+            "color: #f4f4f5; font-weight: bold; font-size: 13px; background: transparent;")
+        name_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        text_col.addWidget(name_lbl)
+
+        sub_lbl = QLabel(colors["label"])
+        sub_lbl.setStyleSheet(
+            f"color: {colors['border']}; font-size: 10px; font-weight: bold; background: transparent;")
+        sub_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        text_col.addWidget(sub_lbl)
+
+        layout.addLayout(text_col)
+        layout.addStretch()
+
+        # Botón eliminar
+        del_btn = QPushButton("✕")
+        del_btn.setFixedSize(26, 26)
+        del_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255,255,255,0.07);
+                color: #a1a1aa;
+                border: none;
+                border-radius: 13px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #7f1d1d; color: #fca5a5; }
+        """)
+        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        del_btn.clicked.connect(
+            lambda: self.guion_remove_item(item_type, item_data))
+        layout.addWidget(del_btn)
+
+        return row
+
+    def guion_remove_item(self, item_type, item_data):
+        reply = QMessageBox.question(
+            self, "Quitar del Guión",
+            f"¿Quitar «{item_data.get('title', item_data.get('name', ''))}» del Guión?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        key_map = {"song": "songs", "bible": "bible",
+                   "image": "images", "pptx": "pptx"}
+        key = key_map[item_type]
+        if item_data in self.guion[key]:
+            self.guion[key].remove(item_data)
+        self.refresh_guion_list()
+        self._update_guion_buttons()
+
+    def guion_clear_all(self):
+        total = sum(len(v) for v in self.guion.values())
+        if total == 0:
+            return
+        reply = QMessageBox.question(
+            self, "Limpiar Guión",
+            "¿Limpiar todos los ítems del Guión?\nEl programa no los guardará al cerrarse.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self.guion = {"songs": [], "bible": [], "images": [], "pptx": []}
+        self.refresh_guion_list()
+        self._update_guion_buttons()
+
+    def _update_guion_buttons(self):
+        """Actualiza el estado visual de los botones + Guión en todas las pestañas."""
+        # Para cantos
+        for i in range(self.songs_list.count()):
+            item = self.songs_list.item(i)
+            widget = self.songs_list.itemWidget(item)
+            if widget:
+                data = item.data(Qt.ItemDataRole.UserRole)
+                if data:
+                    in_guion = any(s["id"] == data["id"]
+                                   for s in self.guion["songs"])
+                    if in_guion:
+                        widget.add_btn.setText("✓ En Guión")
+                        widget.add_btn.setStyleSheet("""
+                            QPushButton {
+                                background-color: #052e16;
+                                color: #4ade80;
+                                border: 1px solid #16a34a;
+                                border-radius: 14px;
+                                padding: 6px 14px;
+                                font-size: 11px;
+                                font-weight: bold;
+                            }
+                        """)
+                    else:
+                        widget.add_btn.setText("+ Guión")
+                        widget.add_btn.setObjectName("addToGuionBtn")
+                        widget.add_btn.setStyleSheet("")
+                        widget.add_btn.style().unpolish(widget.add_btn)
+                        widget.add_btn.style().polish(widget.add_btn)
+
+    def on_guion_item_clicked(self, list_item):
+        """Click simple → carga en preview."""
+        data = list_item.data(Qt.ItemDataRole.UserRole)
+        if not data:
+            return
+        self._load_guion_item_to_preview(data["type"], data["data"])
+
+    def on_guion_item_double_clicked(self, list_item):
+        """Doble click → carga en preview y proyecta directo."""
+        data = list_item.data(Qt.ItemDataRole.UserRole)
+        if not data:
+            return
+        self._load_guion_item_to_preview(
+            data["type"], data["data"], auto_project=True)
+
+    def _load_guion_item_to_preview(self, item_type, item_data, auto_project=False):
+        """Carga un ítem del Guión en la preview, según su tipo."""
+        if item_type == "song":
+            self.load_song_to_preview_by_id(item_data["id"])
+            if auto_project and self.preview_list.count() > 0:
+                self.preview_list.setCurrentRow(0)
+                self.on_preview_card_clicked(self.preview_list.item(0))
+
+        elif item_type == "bible":
+            self.load_bible_chapter_to_preview(
+                item_data["book"], item_data["chapter"],
+                focus_verse=item_data.get("verse")
+            )
+
+        elif item_type == "image":
+            self.load_image_to_preview(
+                item_data["name"], item_data["file_path"])
+            if auto_project and self.preview_list.count() > 0:
+                self.preview_list.setCurrentRow(0)
+                self.on_preview_card_clicked(self.preview_list.item(0))
+
+        elif item_type == "pptx":
+            self.load_pptx_to_preview(item_data["id"], item_data["name"])
+            if auto_project and self.preview_list.count() > 0:
+                self.preview_list.setCurrentRow(0)
+                self.on_preview_card_clicked(self.preview_list.item(0))
 
     def setup_images_page(self):
         container = QFrame()
@@ -1657,7 +2028,8 @@ class MainWindow(QMainWindow):
         self.images_list = QListWidget()
         self.images_list.setObjectName("libraryList")
         self.images_list.itemClicked.connect(self.on_library_image_clicked)
-        self.images_list.itemDoubleClicked.connect(self.on_library_image_double_clicked)
+        self.images_list.itemDoubleClicked.connect(
+            self.on_library_image_double_clicked)
         layout.addWidget(self.images_list)
 
         self.library_stack.addWidget(container)
@@ -1667,7 +2039,7 @@ class MainWindow(QMainWindow):
         conn = sqlite3.connect(database.DB_PATH)
         conn.create_function("remove_accents", 1, remove_accents)
         cursor = conn.cursor()
-        
+
         if filter_text:
             normalized_search = remove_accents(filter_text)
             cursor.execute(
@@ -1677,22 +2049,24 @@ class MainWindow(QMainWindow):
                 (f"%{normalized_search}%",)
             )
         else:
-            cursor.execute("SELECT id, name, file_path FROM images ORDER BY name")
-            
+            cursor.execute(
+                "SELECT id, name, file_path FROM images ORDER BY name")
+
         rows = cursor.fetchall()
         for row in rows:
             image_id, name, file_path = row
-            
+
             abs_path = file_path
             if not os.path.isabs(file_path):
                 abs_path = os.path.join(PROJECT_DIR, file_path)
-            
+
             item = QListWidgetItem(self.images_list)
-            item.setData(Qt.ItemDataRole.UserRole, {"id": image_id, "name": name, "file_path": abs_path})
-            
-            def make_add_callback(iid=image_id, iname=name):
-                return lambda: self.add_image_to_guion(iid, iname)
-                
+            item.setData(Qt.ItemDataRole.UserRole, {
+                         "id": image_id, "name": name, "file_path": abs_path})
+
+            def make_add_callback(iid=image_id, iname=name, ipath=abs_path):
+                return lambda: self.add_image_to_guion(iid, iname, ipath)
+
             widget = LibraryImageRowWidget(
                 title=name,
                 file_path=abs_path,
@@ -1700,7 +2074,7 @@ class MainWindow(QMainWindow):
             )
             item.setSizeHint(widget.minimumSizeHint())
             self.images_list.setItemWidget(item, widget)
-            
+
         conn.close()
 
     def filter_images(self):
@@ -1711,27 +2085,27 @@ class MainWindow(QMainWindow):
         file_dialog.setWindowTitle("Seleccionar Imágenes")
         file_dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
         file_dialog.setNameFilter("Imágenes (*.png *.jpg *.jpeg *.bmp *.webp)")
-        
+
         if file_dialog.exec():
             selected_files = file_dialog.selectedFiles()
             if not selected_files:
                 return
-                
+
             imported_dir = os.path.join(PROJECT_DIR, "imported_images")
             if not os.path.exists(imported_dir):
                 os.makedirs(imported_dir)
-                
+
             conn = sqlite3.connect(database.DB_PATH)
             cursor = conn.cursor()
-            
+
             imported_count = 0
             for file_path in selected_files:
                 if not os.path.exists(file_path):
                     continue
-                    
+
                 base_name = os.path.basename(file_path)
                 dest_path = os.path.join(imported_dir, base_name)
-                
+
                 # Evitar sobreescribir renombrando
                 if os.path.exists(dest_path):
                     name_part, ext_part = os.path.splitext(base_name)
@@ -1740,21 +2114,24 @@ class MainWindow(QMainWindow):
                         counter += 1
                     base_name = f"{name_part}_{counter}{ext_part}"
                     dest_path = os.path.join(imported_dir, base_name)
-                
+
                 try:
                     shutil.copy2(file_path, dest_path)
                     relative_path = os.path.join("imported_images", base_name)
-                    cursor.execute("INSERT INTO images (name, file_path) VALUES (?, ?)", (base_name, relative_path))
+                    cursor.execute(
+                        "INSERT INTO images (name, file_path) VALUES (?, ?)", (base_name, relative_path))
                     imported_count += 1
                 except Exception as e:
-                    QMessageBox.warning(self, "Error de Importación", f"No se pudo copiar {base_name}: {str(e)}")
-            
+                    QMessageBox.warning(
+                        self, "Error de Importación", f"No se pudo copiar {base_name}: {str(e)}")
+
             conn.commit()
             conn.close()
-            
+
             if imported_count > 0:
                 self.load_images_library()
-                QMessageBox.information(self, "Importación", f"Se importaron {imported_count} imágenes exitosamente.")
+                QMessageBox.information(
+                    self, "Importación", f"Se importaron {imported_count} imágenes exitosamente.")
 
     def on_library_image_clicked(self, item):
         data = item.data(Qt.ItemDataRole.UserRole)
@@ -1789,7 +2166,8 @@ class MainWindow(QMainWindow):
             "name": name
         })
 
-        card_widget = PreviewImageCardWidget(header="Imagen", image_path=file_path)
+        card_widget = PreviewImageCardWidget(
+            header="Imagen", image_path=file_path)
         list_item.setSizeHint(card_widget.minimumSizeHint())
         self.preview_list.setItemWidget(list_item, card_widget)
 
@@ -1798,8 +2176,14 @@ class MainWindow(QMainWindow):
             self.preview_list.setCurrentRow(0)
             self.preview_list.setFocus()
 
-    def add_image_to_guion(self, image_id, name):
-        QMessageBox.information(self, "Guión", f"Añadido al Guión: {name} (ID: {image_id})")
+    def add_image_to_guion(self, image_id, name, file_path):
+        if any(i["id"] == image_id for i in self.guion["images"]):
+            QMessageBox.information(
+                self, "Guión", f"«{name}» ya está en el Guión.")
+            return
+        self.guion["images"].append(
+            {"id": image_id, "name": name, "file_path": file_path})
+        self.refresh_guion_list()
 
     def setup_pptx_page(self):
         container = QFrame()
@@ -1831,7 +2215,8 @@ class MainWindow(QMainWindow):
         self.pptx_list = QListWidget()
         self.pptx_list.setObjectName("libraryList")
         self.pptx_list.itemClicked.connect(self.on_library_pptx_clicked)
-        self.pptx_list.itemDoubleClicked.connect(self.on_library_pptx_double_clicked)
+        self.pptx_list.itemDoubleClicked.connect(
+            self.on_library_pptx_double_clicked)
         layout.addWidget(self.pptx_list)
 
         self.library_stack.addWidget(container)
@@ -1841,7 +2226,7 @@ class MainWindow(QMainWindow):
         conn = sqlite3.connect(database.DB_PATH)
         conn.create_function("remove_accents", 1, remove_accents)
         cursor = conn.cursor()
-        
+
         if filter_text:
             normalized_search = remove_accents(filter_text)
             cursor.execute(
@@ -1851,15 +2236,17 @@ class MainWindow(QMainWindow):
                 (f"%{normalized_search}%",)
             )
         else:
-            cursor.execute("SELECT id, name, file_path FROM pptx_files ORDER BY name")
-            
+            cursor.execute(
+                "SELECT id, name, file_path FROM pptx_files ORDER BY name")
+
         rows = cursor.fetchall()
         for row in rows:
             pptx_id, name, file_path = row
-            
+
             item = QListWidgetItem(self.pptx_list)
-            item.setData(Qt.ItemDataRole.UserRole, {"id": pptx_id, "name": name, "file_path": file_path})
-            
+            item.setData(Qt.ItemDataRole.UserRole, {
+                         "id": pptx_id, "name": name, "file_path": file_path})
+
             def make_add_callback(pid=pptx_id, pname=name):
                 return lambda: self.add_pptx_to_guion(pid, pname)
 
@@ -1867,7 +2254,7 @@ class MainWindow(QMainWindow):
                 return lambda: self.delete_pptx(pid, pname)
 
             file_type = "pdf" if name.lower().endswith(".pdf") else "pptx"
-                
+
             widget = LibraryPptxRowWidget(
                 title=name,
                 on_add_clicked=make_add_callback(),
@@ -1876,7 +2263,7 @@ class MainWindow(QMainWindow):
             )
             item.setSizeHint(widget.minimumSizeHint())
             self.pptx_list.setItemWidget(item, widget)
-            
+
         conn.close()
 
     def filter_pptx(self):
@@ -1895,7 +2282,8 @@ class MainWindow(QMainWindow):
 
         conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT file_path FROM pptx_files WHERE id = ?", (pptx_id,))
+        cursor.execute(
+            "SELECT file_path FROM pptx_files WHERE id = ?", (pptx_id,))
         row = cursor.fetchone()
         cursor.execute("DELETE FROM pptx_files WHERE id = ?", (pptx_id,))
         conn.commit()
@@ -1912,7 +2300,8 @@ class MainWindow(QMainWindow):
                     except Exception:
                         pass
 
-            slides_dir = os.path.join(PROJECT_DIR, "imported_pptx", f"pptx_{pptx_id}_slides")
+            slides_dir = os.path.join(
+                PROJECT_DIR, "imported_pptx", f"pptx_{pptx_id}_slides")
             if os.path.exists(slides_dir):
                 try:
                     shutil.rmtree(slides_dir)
@@ -1924,55 +2313,61 @@ class MainWindow(QMainWindow):
 
     def import_pptx_from_pc(self):
         file_dialog = QFileDialog(self)
-        file_dialog.setWindowTitle("Seleccionar Presentaciones (PowerPoint o PDF)")
+        file_dialog.setWindowTitle(
+            "Seleccionar Presentaciones (PowerPoint o PDF)")
         file_dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
         file_dialog.setNameFilter("Presentaciones (*.pptx *.ppt *.pdf)")
-        
+
         if file_dialog.exec():
             selected_files = file_dialog.selectedFiles()
             if not selected_files:
                 return
-                
+
             imported_dir = os.path.join(PROJECT_DIR, "imported_pptx")
             if not os.path.exists(imported_dir):
                 os.makedirs(imported_dir)
-                
+
             conn = sqlite3.connect(database.DB_PATH)
             cursor = conn.cursor()
-            
+
             imported_count = 0
             failed_files = []
 
             for file_path in selected_files:
                 if not os.path.exists(file_path):
                     continue
-                    
+
                 base_name = os.path.basename(file_path)
                 file_ext = os.path.splitext(base_name)[1].lower()
-                
+
                 # Registrar primero en la DB para obtener el ID único
-                cursor.execute("INSERT INTO pptx_files (name, file_path) VALUES (?, ?)", (base_name, ""))
+                cursor.execute(
+                    "INSERT INTO pptx_files (name, file_path) VALUES (?, ?)", (base_name, ""))
                 pptx_id = cursor.lastrowid
-                
+
                 # Crear ruta de destino con el ID para evitar colisiones
                 dest_name = f"pptx_{pptx_id}{file_ext}"
                 dest_path = os.path.join(imported_dir, dest_name)
-                
+
                 try:
                     # Copiar archivo original (pptx, ppt o pdf)
                     shutil.copy2(file_path, dest_path)
-                    
+
                     # Guardar la ruta relativa en la base de datos
                     relative_path = os.path.join("imported_pptx", dest_name)
-                    cursor.execute("UPDATE pptx_files SET file_path = ? WHERE id = ?", (relative_path, pptx_id))
-                    
+                    cursor.execute(
+                        "UPDATE pptx_files SET file_path = ? WHERE id = ?", (relative_path, pptx_id))
+
                     # Convertir a imágenes en una carpeta dedicada, según el tipo de archivo
-                    slides_dir = os.path.join(imported_dir, f"pptx_{pptx_id}_slides")
+                    slides_dir = os.path.join(
+                        imported_dir, f"pptx_{pptx_id}_slides")
 
                     if file_ext == ".pdf":
-                        slide_images = pdf_helper.convert_pdf_to_images(dest_path, slides_dir)
+                        slide_images = pdf_helper.convert_pdf_to_images(
+                            dest_path, slides_dir)
                     else:
-                        slide_images = pptx_helper.convert_pptx_to_images(dest_path, slides_dir)
+                        slide_images = pptx_helper.convert_pptx_to_images(
+                            dest_path, slides_dir)
 
                     if not slide_images:
                         failed_files.append(base_name)
@@ -1981,14 +2376,16 @@ class MainWindow(QMainWindow):
 
                 except Exception as e:
                     failed_files.append(base_name)
-                    QMessageBox.warning(self, "Error de Importación", f"No se pudo procesar {base_name}: {str(e)}")
-            
+                    QMessageBox.warning(
+                        self, "Error de Importación", f"No se pudo procesar {base_name}: {str(e)}")
+
             conn.commit()
             conn.close()
-            
+
             if imported_count > 0:
                 self.load_pptx_library()
-                QMessageBox.information(self, "Importación", f"Se importaron y convirtieron {imported_count} presentaciones exitosamente.")
+                QMessageBox.information(
+                    self, "Importación", f"Se importaron y convirtieron {imported_count} presentaciones exitosamente.")
 
             if failed_files:
                 names = "\n".join(failed_files)
@@ -2016,36 +2413,37 @@ class MainWindow(QMainWindow):
     def load_pptx_to_preview(self, pptx_id, name):
         self.active_item_title.setText(name)
         self.preview_list.clear()
-        
-        slides_dir = os.path.join(PROJECT_DIR, "imported_pptx", f"pptx_{pptx_id}_slides")
+
+        slides_dir = os.path.join(
+            PROJECT_DIR, "imported_pptx", f"pptx_{pptx_id}_slides")
         if not os.path.exists(slides_dir):
             return
-            
+
         # Buscar todas las imágenes de diapositiva en el directorio
         try:
             files = os.listdir(slides_dir)
         except Exception:
             return
-            
+
         png_files = [f for f in files if f.lower().endswith(".png")]
-        
+
         # Ordenar numéricamente (Slide1, Slide2...)
         def extract_number(filename):
             num_str = "".join([c for c in filename if c.isdigit()])
             return int(num_str) if num_str else 0
-        
+
         png_files.sort(key=extract_number)
-        
+
         self.active_item_data = {
             "type": "pptx",
             "title": name,
             "slides": [os.path.join(slides_dir, f) for f in png_files]
         }
-        
+
         for i, png in enumerate(png_files):
             slide_path = os.path.join(slides_dir, png)
             header = f"Diapositiva {i+1}"
-            
+
             list_item = QListWidgetItem(self.preview_list)
             list_item.setData(Qt.ItemDataRole.UserRole, {
                 "mode": "image",
@@ -2053,37 +2451,48 @@ class MainWindow(QMainWindow):
                 "header": header,
                 "name": name
             })
-            
-            card_widget = PreviewImageCardWidget(header=header, image_path=slide_path)
+
+            card_widget = PreviewImageCardWidget(
+                header=header, image_path=slide_path)
             list_item.setSizeHint(card_widget.minimumSizeHint())
             self.preview_list.setItemWidget(list_item, card_widget)
-            
+
         # Seleccionar visualmente y enfocar para la navegación por teclado
         if self.preview_list.count() > 0:
             self.preview_list.setCurrentRow(0)
             self.preview_list.setFocus()
 
     def add_pptx_to_guion(self, pptx_id, name):
-        QMessageBox.information(self, "Guión", f"Añadido al Guión: {name} (ID: {pptx_id})")
+        if any(p["id"] == pptx_id for p in self.guion["pptx"]):
+            QMessageBox.information(
+                self, "Guión", f"«{name}» ya está en el Guión.")
+            return
+        self.guion["pptx"].append({"id": pptx_id, "name": name})
+        self.refresh_guion_list()
 
     def change_lyrics_background(self):
         # Preguntar si desea cambiar o quitar el fondo
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Fondo General para Letras")
-        msg_box.setText("Selecciona una opción para el fondo general de las letras:")
-        
-        select_btn = msg_box.addButton("Seleccionar Imagen", QMessageBox.ButtonRole.AcceptRole)
-        remove_btn = msg_box.addButton("Quitar Fondo", QMessageBox.ButtonRole.DestructiveRole)
-        cancel_btn = msg_box.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
-        
+        msg_box.setText(
+            "Selecciona una opción para el fondo general de las letras:")
+
+        select_btn = msg_box.addButton(
+            "Seleccionar Imagen", QMessageBox.ButtonRole.AcceptRole)
+        remove_btn = msg_box.addButton(
+            "Quitar Fondo", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_btn = msg_box.addButton(
+            "Cancelar", QMessageBox.ButtonRole.RejectRole)
+
         msg_box.exec()
-        
+
         clicked_btn = msg_box.clickedButton()
-        
+
         if clicked_btn == select_btn:
             file_dialog = QFileDialog(self)
             file_dialog.setWindowTitle("Seleccionar Imagen de Fondo")
-            file_dialog.setNameFilter("Imágenes (*.png *.jpg *.jpeg *.bmp *.webp)")
+            file_dialog.setNameFilter(
+                "Imágenes (*.png *.jpg *.jpeg *.bmp *.webp)")
             if file_dialog.exec():
                 selected_files = file_dialog.selectedFiles()
                 if selected_files:
@@ -2092,34 +2501,38 @@ class MainWindow(QMainWindow):
                     imported_dir = os.path.join(PROJECT_DIR, "imported_images")
                     if not os.path.exists(imported_dir):
                         os.makedirs(imported_dir)
-                    
-                    base_name = "general_lyrics_bg" + os.path.splitext(file_path)[1]
+
+                    base_name = "general_lyrics_bg" + \
+                        os.path.splitext(file_path)[1]
                     dest_path = os.path.join(imported_dir, base_name)
-                    
+
                     try:
                         shutil.copy2(file_path, dest_path)
                         # Guardar ruta absoluta/relativa
                         abs_dest_path = os.path.abspath(dest_path)
-                        
+
                         # Guardar configuración en archivo de texto
-                        bg_config_path = os.path.join(PROJECT_DIR, "lyrics_bg_path.txt")
+                        bg_config_path = os.path.join(
+                            PROJECT_DIR, "lyrics_bg_path.txt")
                         with open(bg_config_path, "w", encoding="utf-8") as f:
                             f.write(abs_dest_path)
-                            
+
                         # Cargar el pixmap y aplicarlo
                         pixmap = QPixmap(abs_dest_path)
                         self.local_projection_widget.general_bg_pixmap = pixmap
                         if self.projection_window:
                             self.projection_window.projection_widget.general_bg_pixmap = pixmap
-                            
+
                         self.local_projection_widget.update()
                         if self.projection_window:
                             self.projection_window.projection_widget.update()
-                            
-                        QMessageBox.information(self, "Fondo Guardado", "Se ha establecido el fondo general para las letras.")
+
+                        QMessageBox.information(
+                            self, "Fondo Guardado", "Se ha establecido el fondo general para las letras.")
                     except Exception as e:
-                        QMessageBox.warning(self, "Error", f"No se pudo copiar la imagen de fondo: {str(e)}")
-                        
+                        QMessageBox.warning(
+                            self, "Error", f"No se pudo copiar la imagen de fondo: {str(e)}")
+
         elif clicked_btn == remove_btn:
             # Quitar fondo
             bg_config_path = os.path.join(PROJECT_DIR, "lyrics_bg_path.txt")
@@ -2128,16 +2541,17 @@ class MainWindow(QMainWindow):
                     os.remove(bg_config_path)
                 except Exception:
                     pass
-            
+
             self.local_projection_widget.general_bg_pixmap = None
             if self.projection_window:
                 self.projection_window.projection_widget.general_bg_pixmap = None
-                
+
             self.local_projection_widget.update()
             if self.projection_window:
                 self.projection_window.projection_widget.update()
-                
-            QMessageBox.information(self, "Fondo Quitado", "Se ha quitado el fondo general para las letras (ahora es negro sólido).")
+
+            QMessageBox.information(
+                self, "Fondo Quitado", "Se ha quitado el fondo general para las letras (ahora es negro sólido).")
 
     def load_persisted_lyrics_bg(self):
         bg_config_path = os.path.join(PROJECT_DIR, "lyrics_bg_path.txt")
@@ -2165,7 +2579,7 @@ class MainWindow(QMainWindow):
         # Registrar la función de normalización en la conexión de SQLite
         conn.create_function("remove_accents", 1, remove_accents)
         cursor = conn.cursor()
-        
+
         if filter_text:
             normalized_search = remove_accents(filter_text)
             cursor.execute(
@@ -2175,15 +2589,17 @@ class MainWindow(QMainWindow):
                 (f"%{normalized_search}%", f"%{normalized_search}%")
             )
         else:
-            cursor.execute("SELECT id, title, category, lyrics FROM songs ORDER BY title")
+            cursor.execute(
+                "SELECT id, title, category, lyrics FROM songs ORDER BY title")
 
         rows = cursor.fetchall()
         for row in rows:
             song_id, title, category, lyrics = row
-            
+
             item = QListWidgetItem(self.songs_list)
-            item.setData(Qt.ItemDataRole.UserRole, {"id": song_id, "title": title, "category": category})
-            
+            item.setData(Qt.ItemDataRole.UserRole, {
+                         "id": song_id, "title": title, "category": category})
+
             def make_add_callback(sid=song_id, stitle=title):
                 return lambda: self.add_song_to_guion(sid, stitle)
 
@@ -2194,8 +2610,8 @@ class MainWindow(QMainWindow):
                 return lambda: self.delete_song(sid, stitle)
 
             widget = LibrarySongRowWidget(
-                title=title, 
-                category=category, 
+                title=title,
+                category=category,
                 on_add_clicked=make_add_callback(),
                 on_edit_clicked=make_edit_callback(),
                 on_delete_clicked=make_delete_callback()
@@ -2264,7 +2680,7 @@ class MainWindow(QMainWindow):
             self.load_song_to_preview_by_id(data["id"])
             # Proyectar el título primero automáticamente (primer elemento en la lista)
             if self.preview_list.count() > 0:
-                first_item = self.preview_list.item(0) 
+                first_item = self.preview_list.item(0)
                 self.preview_list.setCurrentItem(first_item)
                 self.on_preview_card_clicked(first_item)
 
@@ -2275,19 +2691,20 @@ class MainWindow(QMainWindow):
     def load_song_to_preview_by_id(self, song_id):
         conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT title, lyrics, category FROM songs WHERE id = ?", (song_id,))
+        cursor.execute(
+            "SELECT title, lyrics, category FROM songs WHERE id = ?", (song_id,))
         res = cursor.fetchone()
         conn.close()
-        
+
         if not res:
             return
-            
+
         title, lyrics, category = res
         self.active_item_title.setText(title)
         self.preview_list.clear()
 
         slides = [s.strip() for s in lyrics.split("\n\n") if s.strip()]
-        
+
         self.active_item_data = {
             "type": "song",
             "title": title,
@@ -2307,13 +2724,14 @@ class MainWindow(QMainWindow):
 
             list_item = QListWidgetItem(self.preview_list)
             list_item.setData(Qt.ItemDataRole.UserRole, {
-                "mode": "text", 
-                "text": display_content, 
+                "mode": "text",
+                "text": display_content,
                 "header": header,
                 "song_title": title
             })
-            
-            card_widget = PreviewCardWidget(header=header, lyrics=display_content)
+
+            card_widget = PreviewCardWidget(
+                header=header, lyrics=display_content)
             list_item.setSizeHint(card_widget.minimumSizeHint())
             self.preview_list.setItemWidget(list_item, card_widget)
 
@@ -2328,11 +2746,11 @@ class MainWindow(QMainWindow):
             widget = self.preview_list.itemWidget(list_item)
             if hasattr(widget, "set_selected"):
                 widget.set_selected(False)
-                
+
         widget = self.preview_list.itemWidget(item)
         if hasattr(widget, "set_selected"):
             widget.set_selected(True)
-            
+
         self.project_selected_card(item)
 
     # =========================================================================
@@ -2349,36 +2767,38 @@ class MainWindow(QMainWindow):
             text = data["text"]
             header = data.get("header", "")
             song_title = data.get("song_title", "")
-            
+
             self.current_projection_mode = "text"
             self.last_projected_mode = "text"
             self.last_projected_text = text
             self.last_projected_header = header
             self.last_projected_song_title = song_title
-            
+
             # Local
             self.local_projection_widget.display_text(text, header, song_title)
-            
+
             # Externo
             if self.projection_window and self.projection_window.isVisible():
-                self.projection_window.projection_widget.display_text(text, header, song_title)
+                self.projection_window.projection_widget.display_text(
+                    text, header, song_title)
         elif mode == "image":
             file_path = data["file_path"]
             name = data.get("name", "")
             header = data.get("header", "Imagen")
-            
+
             self.current_projection_mode = "image"
             self.last_projected_mode = "image"
             self.last_projected_image_path = file_path
             self.last_projected_header = header
             self.last_projected_song_title = name
-            
+
             # Local
             self.local_projection_widget.display_image(file_path, header, name)
-            
+
             # Externo
             if self.projection_window and self.projection_window.isVisible():
-                self.projection_window.projection_widget.display_image(file_path, header, name)
+                self.projection_window.projection_widget.display_image(
+                    file_path, header, name)
 
     def project_black(self):
         self.current_projection_mode = "black"
@@ -2415,14 +2835,14 @@ class MainWindow(QMainWindow):
     def toggle_projection_window(self):
         if not self.projection_window:
             self.projection_window = ProjectionWindow()
-        
+
         if self.projection_window.isVisible():
             self.projection_window.hide()
             self.btn_toggle_projector.setText("V. Externa")
         else:
             self.projection_window.show()
             self.btn_toggle_projector.setText("Ocultar V. Ext")
-            
+
             # Sincronizar
             if self.current_projection_mode == "text":
                 self.projection_window.projection_widget.display_text(
@@ -2440,7 +2860,13 @@ class MainWindow(QMainWindow):
     # =========================================================================
 
     def add_song_to_guion(self, song_id, title):
-        QMessageBox.information(self, "Guión", f"Añadido al Guión: {title} (ID: {song_id})")
+        if any(s["id"] == song_id for s in self.guion["songs"]):
+            QMessageBox.information(
+                self, "Guión", f"«{title}» ya está en el Guión.")
+            return
+        self.guion["songs"].append({"id": song_id, "title": title})
+        self.refresh_guion_list()
+        self._update_guion_buttons()
 
     def closeEvent(self, event):
         if self.projection_window:
@@ -2450,10 +2876,12 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    
+
     palette = app.palette()
-    palette.setColor(palette.ColorGroup.All, palette.ColorRole.Window, QColor("#0f0f11"))
-    palette.setColor(palette.ColorGroup.All, palette.ColorRole.WindowText, QColor("#f4f4f5"))
+    palette.setColor(palette.ColorGroup.All,
+                     palette.ColorRole.Window, QColor("#0f0f11"))
+    palette.setColor(palette.ColorGroup.All,
+                     palette.ColorRole.WindowText, QColor("#f4f4f5"))
     app.setPalette(palette)
 
     window = MainWindow()
