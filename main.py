@@ -517,10 +517,12 @@ class CleanProjectionWidget(QFrame):
 
         self.raw_pixmap = None
         self.general_bg_pixmap = None
+        self.is_black_screen = True
         self.current_song_title = ""
         self.current_slide_name = ""
 
     def display_text(self, text, slide_name="", song_title=""):
+        self.is_black_screen = False
         self.raw_pixmap = None
         self.text_label.setText(text)
         self.text_label.show()
@@ -539,8 +541,14 @@ class CleanProjectionWidget(QFrame):
                 self.current_song_title or self.current_slide_name)
 
     def display_image(self, pixmap_path, slide_name="", song_title=""):
+        self.is_black_screen = False
         self.text_label.hide()
-        self.raw_pixmap = QPixmap(pixmap_path)
+        # Cargar con el device pixel ratio de la pantalla para evitar borrosidad
+        pixmap = QPixmap(pixmap_path)
+        dpr = self.devicePixelRatioF()
+        if dpr != 1.0:
+            pixmap.setDevicePixelRatio(dpr)
+        self.raw_pixmap = pixmap
         self.update()
 
         if song_title:
@@ -556,6 +564,7 @@ class CleanProjectionWidget(QFrame):
                 self.current_song_title or self.current_slide_name)
 
     def set_black_screen(self):
+        self.is_black_screen = True
         self.text_label.hide()
         self.raw_pixmap = None
         self.footer_label.setText("")
@@ -579,7 +588,7 @@ class CleanProjectionWidget(QFrame):
         painter.fillRect(rect, Qt.GlobalColor.black)
 
         # Si hay imagen de fondo general (para letras), pintarla primero
-        if self.general_bg_pixmap and not self.general_bg_pixmap.isNull() and self.raw_pixmap is None:
+        if not getattr(self, "is_black_screen", False) and self.general_bg_pixmap and not self.general_bg_pixmap.isNull() and self.raw_pixmap is None:
             scaled = self.general_bg_pixmap.scaled(
                 rect.size(),
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
@@ -589,11 +598,11 @@ class CleanProjectionWidget(QFrame):
             y = rect.y() + (rect.height() - scaled.height()) // 2
             painter.drawPixmap(x, y, scaled)
 
-        # Si hay una imagen/diapositiva cargada, dibujarla encima
+        # Si hay una imagen/diapositiva cargada, dibujarla cubriendo toda la pantalla
         if self.raw_pixmap and not self.raw_pixmap.isNull():
             scaled = self.raw_pixmap.scaled(
                 rect.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation
             )
             x = rect.x() + (rect.width() - scaled.width()) // 2
@@ -1170,6 +1179,22 @@ class MainWindow(QMainWindow):
             self.nav_buttons[name] = btn
 
         top_bar_layout.addStretch()
+
+        # Buscador contextual en el topbar — visible solo en Biblias
+        self.topbar_bible_search = QLineEdit()
+        self.topbar_bible_search.setObjectName("searchBar")
+        self.topbar_bible_search.setPlaceholderText(
+            "🔎 Buscar cita (ej. Juan 3 16) y Enter...")
+        self.topbar_bible_search.setMinimumWidth(320)
+        self.topbar_bible_search.setMaximumWidth(480)
+        self.topbar_bible_search.setMaximumHeight(34)
+        self.topbar_bible_search.setVisible(False)
+        self.topbar_bible_search.returnPressed.connect(
+            self._on_topbar_bible_search)
+        self.topbar_bible_search.textChanged.connect(
+            self._on_topbar_bible_search_changed)
+        top_bar_layout.addWidget(self.topbar_bible_search)
+
         window_layout.addWidget(self.top_bar)
 
         # ---------------- CUERPO PRINCIPAL (CON SPLITTER) ----------------
@@ -1373,20 +1398,13 @@ class MainWindow(QMainWindow):
         container = QFrame()
         container.setObjectName("libraryPanel")
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(10)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
 
         # Estado interno del módulo biblia
         self.bible_current_book = "Juan"
         self.bible_current_version = "RVR60"
-
-        # ---- Buscador (cita rápida) ----
-        self.bible_search = QLineEdit()
-        self.bible_search.setObjectName("searchBar")
-        self.bible_search.setPlaceholderText(
-            "🔎 Buscar cita (ej. Juan 3 16) y Enter...")
-        self.bible_search.returnPressed.connect(self.on_bible_search_enter)
-        layout.addWidget(self.bible_search)
+        self.bible_search_mode = False  # False = capítulos, True = sugerencias
 
         # ---- Fila: selector de libro + versiones ----
         selector_row = QHBoxLayout()
@@ -1434,19 +1452,47 @@ class MainWindow(QMainWindow):
         self.bible_version_buttons["RVR60"].setChecked(True)
         self.bible_version_buttons["RVR60"].setStyleSheet(
             self._version_btn_style(True))
-
         layout.addLayout(selector_row)
 
-        # ---- Label de capítulos ----
-        self.bible_chapters_label = QLabel("Capítulos · Juan")
-        self.bible_chapters_label.setStyleSheet("""
-            color: #71717a; font-size: 11px; font-weight: bold;
-            text-transform: uppercase; letter-spacing: 0.5px;
-            background: transparent; margin-top: 4px;
-        """)
-        layout.addWidget(self.bible_chapters_label)
+        # ---- Stack interno: alterna entre sugerencias y capítulos ----
+        self.bible_inner_stack = QStackedWidget()
+        layout.addWidget(self.bible_inner_stack, stretch=1)
 
-        # ---- Grid de capítulos (scrollable) ----
+        # --- Página 0: Panel de sugerencias ---
+        suggestions_page = QWidget()
+        suggestions_page.setStyleSheet("background: transparent;")
+        sug_layout = QVBoxLayout(suggestions_page)
+        sug_layout.setContentsMargins(0, 4, 0, 0)
+        sug_layout.setSpacing(4)
+
+        self.bible_suggestions_label = QLabel("SUGERENCIAS")
+        self.bible_suggestions_label.setStyleSheet(
+            "color: #71717a; font-size: 10px; font-weight: bold; "
+            "letter-spacing: 0.5px; background: transparent;")
+        sug_layout.addWidget(self.bible_suggestions_label)
+
+        self.bible_suggestions_list = QListWidget()
+        self.bible_suggestions_list.setObjectName("libraryList")
+        self.bible_suggestions_list.setSpacing(2)
+        self.bible_suggestions_list.itemClicked.connect(
+            self._on_suggestion_clicked)
+        sug_layout.addWidget(self.bible_suggestions_list)
+
+        self.bible_inner_stack.addWidget(suggestions_page)  # index 0
+
+        # --- Página 1: Grid de capítulos ---
+        chapters_page = QWidget()
+        chapters_page.setStyleSheet("background: transparent;")
+        ch_layout = QVBoxLayout(chapters_page)
+        ch_layout.setContentsMargins(0, 0, 0, 0)
+        ch_layout.setSpacing(4)
+
+        self.bible_chapters_label = QLabel("Capítulos · Juan")
+        self.bible_chapters_label.setStyleSheet(
+            "color: #71717a; font-size: 10px; font-weight: bold; "
+            "letter-spacing: 0.5px; background: transparent;")
+        ch_layout.addWidget(self.bible_chapters_label)
+
         self.bible_chapters_scroll = QScrollArea()
         self.bible_chapters_scroll.setWidgetResizable(True)
         self.bible_chapters_scroll.setHorizontalScrollBarPolicy(
@@ -1457,10 +1503,15 @@ class MainWindow(QMainWindow):
         self.bible_chapters_container = QWidget()
         self.bible_chapters_container.setStyleSheet("background: transparent;")
         self.bible_chapters_grid = QGridLayout(self.bible_chapters_container)
-        self.bible_chapters_grid.setSpacing(6)
+        self.bible_chapters_grid.setSpacing(4)
+        self.bible_chapters_grid.setContentsMargins(0, 0, 0, 0)
 
         self.bible_chapters_scroll.setWidget(self.bible_chapters_container)
-        layout.addWidget(self.bible_chapters_scroll, stretch=1)
+        ch_layout.addWidget(self.bible_chapters_scroll, stretch=1)
+
+        self.bible_inner_stack.addWidget(chapters_page)  # index 1
+        self.bible_inner_stack.setCurrentIndex(
+            1)  # mostrar capítulos por defecto
 
         self.library_stack.addWidget(container)
 
@@ -1579,11 +1630,11 @@ class MainWindow(QMainWindow):
             }
         """
 
-        cols = 6
+        cols = 8
         for idx, chapter_num in enumerate(chapters):
             row, col = divmod(idx, cols)
             btn = QPushButton(str(chapter_num))
-            btn.setFixedSize(48, 44)
+            btn.setFixedSize(38, 34)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(active_style if chapter_num ==
                               highlight_chapter else normal_style)
@@ -1606,7 +1657,7 @@ class MainWindow(QMainWindow):
 
     def on_bible_search_enter(self):
         """Detecta si el texto es una cita válida ('Juan 3 16' o 'Juan 3:16') y navega directo."""
-        query = self.bible_search.text().strip()
+        query = self.topbar_bible_search.text().strip()
         if not query:
             return
 
@@ -2517,8 +2568,11 @@ class MainWindow(QMainWindow):
                         with open(bg_config_path, "w", encoding="utf-8") as f:
                             f.write(abs_dest_path)
 
-                        # Cargar el pixmap y aplicarlo
+                        # Cargar el pixmap con DPI correcto para evitar borrosidad
                         pixmap = QPixmap(abs_dest_path)
+                        dpr = self.local_projection_widget.devicePixelRatioF()
+                        if dpr != 1.0:
+                            pixmap.setDevicePixelRatio(dpr)
                         self.local_projection_widget.general_bg_pixmap = pixmap
                         if self.projection_window:
                             self.projection_window.projection_widget.general_bg_pixmap = pixmap
@@ -2562,6 +2616,9 @@ class MainWindow(QMainWindow):
                 if path and os.path.exists(path):
                     pixmap = QPixmap(path)
                     if not pixmap.isNull():
+                        dpr = self.local_projection_widget.devicePixelRatioF()
+                        if dpr != 1.0:
+                            pixmap.setDevicePixelRatio(dpr)
                         self.local_projection_widget.general_bg_pixmap = pixmap
                         if self.projection_window:
                             self.projection_window.projection_widget.general_bg_pixmap = pixmap
@@ -2656,7 +2713,176 @@ class MainWindow(QMainWindow):
             pages = ["Cantos", "Biblias", "Imágenes", "PPTX", "Guión"]
             if name in pages:
                 self.library_stack.setCurrentIndex(pages.index(name))
+            # Mostrar el buscador del topbar solo en Biblias
+            self.topbar_bible_search.setVisible(name == "Biblias")
+            if name == "Biblias":
+                self.topbar_bible_search.setFocus()
         return callback
+
+    def _on_topbar_bible_search(self):
+        """Se llama al dar Enter en el topbar — navega a la cita si es válida."""
+        query = self.topbar_bible_search.text().strip()
+        if not query:
+            self._bible_show_chapters()
+            return
+
+        # Intentar como cita completa primero
+        parsed = self._parse_bible_reference(query)
+        if parsed:
+            book_name, chapter, verse = parsed
+            self.load_bible_chapter_to_preview(
+                book_name, chapter, focus_verse=verse)
+            self._bible_show_chapters()
+            return
+
+        # Si no es cita completa, actualizar sugerencias
+        self._update_bible_suggestions(query)
+
+    def _on_topbar_bible_search_changed(self, text):
+        """Se llama en tiempo real conforme escribe — muestra sugerencias."""
+        query = text.strip()
+        if not query:
+            # Sin texto → volver al modo capítulos
+            self._bible_show_chapters()
+            return
+        self._update_bible_suggestions(query)
+
+    def _update_bible_suggestions(self, query):
+        """Genera sugerencias de libros, capítulos o versículos según lo escrito."""
+        self.bible_suggestions_list.clear()
+        query_clean = remove_accents(query.lower())
+        all_books = self.BIBLE_BOOKS_OT + self.BIBLE_BOOKS_NT
+
+        suggestions = []
+
+        # Detectar si hay número al final tipo "juan 3" o "juan 3:16" o "juan 3 16"
+        # Patrón: texto_libro + número_capítulo + (opcional: número_versículo)
+        m = re.match(r"^(.+?)\s+(\d+)(?:[:|\s]+(\d+))?$", query.strip())
+
+        if m:
+            raw_book = m.group(1).strip()
+            chapter = int(m.group(2))
+            verse = int(m.group(3)) if m.group(3) else None
+            book_clean = remove_accents(raw_book.lower())
+
+            for book in all_books:
+                book_norm = remove_accents(book.lower())
+                if book_norm.startswith(book_clean) or book_clean in book_norm:
+                    if verse:
+                        # Sugerencia con versículo específico
+                        label = f"{book}  {chapter}:{verse}"
+                        suggestions.append({
+                            "type": "verse",
+                            "book": book, "chapter": chapter, "verse": verse,
+                            "label": label, "sub": f"Ir al versículo · {self.bible_current_version}"
+                        })
+                    else:
+                        # Sugerencia de capítulo dentro del libro
+                        label = f"{book}  Capítulo {chapter}"
+                        suggestions.append({
+                            "type": "chapter",
+                            "book": book, "chapter": chapter,
+                            "label": label, "sub": f"Ver capítulo · {self.bible_current_version}"
+                        })
+        else:
+            # Solo texto → sugerir libros que coincidan
+            for book in all_books:
+                book_norm = remove_accents(book.lower())
+                if book_norm.startswith(query_clean) or query_clean in book_norm:
+                    suggestions.append({
+                        "type": "book",
+                        "book": book,
+                        "label": book,
+                        "sub": "Seleccionar libro"
+                    })
+
+        if not suggestions:
+            item = QListWidgetItem("Sin resultados para «" + query + "»")
+            item.setForeground(QColor("#52525b"))
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            self.bible_suggestions_list.addItem(item)
+        else:
+            for sug in suggestions[:12]:  # máximo 12 sugerencias
+                self._add_suggestion_row(sug)
+
+        # Mostrar panel de sugerencias
+        self.bible_inner_stack.setCurrentIndex(0)
+
+    def _add_suggestion_row(self, sug):
+        """Agrega una fila visual de sugerencia a la lista."""
+        item = QListWidgetItem(self.bible_suggestions_list)
+        item.setData(Qt.ItemDataRole.UserRole, sug)
+
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(10)
+
+        # Icono según tipo
+        icons = {"book": "📖", "chapter": "📄", "verse": "✦"}
+        colors = {"book": "#16a34a", "chapter": "#6366f1", "verse": "#0F6E56"}
+        t = sug["type"]
+
+        icon_lbl = QLabel(icons.get(t, "📖"))
+        icon_lbl.setFixedSize(30, 30)
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setStyleSheet(f"""
+            background-color: {colors.get(t, '#27272a')};
+            border-radius: 15px; font-size: 13px;
+        """)
+        icon_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        layout.addWidget(icon_lbl)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(1)
+        lbl = QLabel(sug["label"])
+        lbl.setStyleSheet(
+            "color: #f4f4f5; font-size: 13px; font-weight: bold; background: transparent;")
+        lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        sub = QLabel(sug["sub"])
+        sub.setStyleSheet(
+            "color: #71717a; font-size: 10px; background: transparent;")
+        sub.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        text_col.addWidget(lbl)
+        text_col.addWidget(sub)
+        layout.addLayout(text_col)
+        layout.addStretch()
+
+        row.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        item.setSizeHint(row.sizeHint())
+        self.bible_suggestions_list.setItemWidget(item, row)
+
+    def _on_suggestion_clicked(self, list_item):
+        """Procesa el click en una sugerencia."""
+        sug = list_item.data(Qt.ItemDataRole.UserRole)
+        if not sug:
+            return
+
+        if sug["type"] == "book":
+            # Seleccionar el libro y mostrar capítulos
+            self.topbar_bible_search.clear()
+            self.load_bible_chapter_to_preview(sug["book"], 1)
+            self._bible_show_chapters()
+
+        elif sug["type"] == "chapter":
+            # Navegar al capítulo
+            self.topbar_bible_search.clear()
+            self.load_bible_chapter_to_preview(sug["book"], sug["chapter"])
+            self._bible_show_chapters()
+
+        elif sug["type"] == "verse":
+            # Navegar directo al versículo
+            self.topbar_bible_search.clear()
+            self.load_bible_chapter_to_preview(
+                sug["book"], sug["chapter"], focus_verse=sug["verse"])
+            self._bible_show_chapters()
+
+    def _bible_show_chapters(self):
+        """Vuelve al modo grid de capítulos."""
+        self.bible_inner_stack.setCurrentIndex(1)
 
     def set_active_nav_button(self, active_name):
         for name, btn in self.nav_buttons.items():
@@ -2835,6 +3061,8 @@ class MainWindow(QMainWindow):
     def toggle_projection_window(self):
         if not self.projection_window:
             self.projection_window = ProjectionWindow()
+            # Copiar la imagen de fondo actual a la nueva ventana externa
+            self.projection_window.projection_widget.general_bg_pixmap = self.local_projection_widget.general_bg_pixmap
 
         if self.projection_window.isVisible():
             self.projection_window.hide()
@@ -2844,10 +3072,16 @@ class MainWindow(QMainWindow):
             self.btn_toggle_projector.setText("Ocultar V. Ext")
 
             # Sincronizar
+            self.projection_window.projection_widget.is_black_screen = self.local_projection_widget.is_black_screen
             if self.current_projection_mode == "text":
-                self.projection_window.projection_widget.display_text(
-                    self.last_projected_text, self.last_projected_header, self.last_projected_song_title
-                )
+                if not self.local_projection_widget.text_label.text():
+                    self.projection_window.projection_widget.display_text(
+                        "", self.last_projected_header, self.last_projected_song_title
+                    )
+                else:
+                    self.projection_window.projection_widget.display_text(
+                        self.last_projected_text, self.last_projected_header, self.last_projected_song_title
+                    )
             elif self.current_projection_mode == "image":
                 self.projection_window.projection_widget.display_image(
                     self.last_projected_image_path, self.last_projected_header, self.last_projected_song_title
@@ -2885,5 +3119,5 @@ if __name__ == "__main__":
     app.setPalette(palette)
 
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
