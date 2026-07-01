@@ -543,12 +543,7 @@ class CleanProjectionWidget(QFrame):
     def display_image(self, pixmap_path, slide_name="", song_title=""):
         self.is_black_screen = False
         self.text_label.hide()
-        # Cargar con el device pixel ratio de la pantalla para evitar borrosidad
-        pixmap = QPixmap(pixmap_path)
-        dpr = self.devicePixelRatioF()
-        if dpr != 1.0:
-            pixmap.setDevicePixelRatio(dpr)
-        self.raw_pixmap = pixmap
+        self.raw_pixmap = QPixmap(pixmap_path)
         self.update()
 
         if song_title:
@@ -582,32 +577,48 @@ class CleanProjectionWidget(QFrame):
     def paintEvent(self, event):
         from PyQt6.QtGui import QPainter
         painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
         rect = self.contentsRect()
-        # Dibujar fondo negro sólido siempre
+        # Tamaño físico real (considera DPR de pantallas HiDPI)
+        dpr = self.devicePixelRatioF()
+        phys_w = int(rect.width() * dpr)
+        phys_h = int(rect.height() * dpr)
+        from PyQt6.QtCore import QSize
+        phys_size = QSize(phys_w, phys_h)
+
+        # Fondo negro siempre
         painter.fillRect(rect, Qt.GlobalColor.black)
 
-        # Si hay imagen de fondo general (para letras), pintarla primero
-        if not getattr(self, "is_black_screen", False) and self.general_bg_pixmap and not self.general_bg_pixmap.isNull() and self.raw_pixmap is None:
+        # Fondo de letras (solo cuando NO hay imagen/diapositiva activa)
+        if (not getattr(self, "is_black_screen", False)
+                and self.general_bg_pixmap
+                and not self.general_bg_pixmap.isNull()
+                and self.raw_pixmap is None):
             scaled = self.general_bg_pixmap.scaled(
-                rect.size(),
+                phys_size,
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation
             )
-            x = rect.x() + (rect.width() - scaled.width()) // 2
-            y = rect.y() + (rect.height() - scaled.height()) // 2
-            painter.drawPixmap(x, y, scaled)
+            # Dibujar centrado en coordenadas lógicas
+            lw = scaled.width() / dpr
+            lh = scaled.height() / dpr
+            x = rect.x() + (rect.width() - lw) / 2
+            y = rect.y() + (rect.height() - lh) / 2
+            painter.drawPixmap(int(x), int(y), int(lw), int(lh), scaled)
 
-        # Si hay una imagen/diapositiva cargada, dibujarla cubriendo toda la pantalla
+        # Imagen o diapositiva activa — cubre toda la pantalla
         if self.raw_pixmap and not self.raw_pixmap.isNull():
             scaled = self.raw_pixmap.scaled(
-                rect.size(),
+                phys_size,
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation
             )
-            x = rect.x() + (rect.width() - scaled.width()) // 2
-            y = rect.y() + (rect.height() - scaled.height()) // 2
-            painter.drawPixmap(x, y, scaled)
+            lw = scaled.width() / dpr
+            lh = scaled.height() / dpr
+            x = rect.x() + (rect.width() - lw) / 2
+            y = rect.y() + (rect.height() - lh) / 2
+            painter.drawPixmap(int(x), int(y), int(lw), int(lh), scaled)
 
         painter.end()
         super().paintEvent(event)
@@ -2568,11 +2579,8 @@ class MainWindow(QMainWindow):
                         with open(bg_config_path, "w", encoding="utf-8") as f:
                             f.write(abs_dest_path)
 
-                        # Cargar el pixmap con DPI correcto para evitar borrosidad
+                        # Cargar el pixmap limpio (el paintEvent maneja el DPR)
                         pixmap = QPixmap(abs_dest_path)
-                        dpr = self.local_projection_widget.devicePixelRatioF()
-                        if dpr != 1.0:
-                            pixmap.setDevicePixelRatio(dpr)
                         self.local_projection_widget.general_bg_pixmap = pixmap
                         if self.projection_window:
                             self.projection_window.projection_widget.general_bg_pixmap = pixmap
@@ -2616,9 +2624,6 @@ class MainWindow(QMainWindow):
                 if path and os.path.exists(path):
                     pixmap = QPixmap(path)
                     if not pixmap.isNull():
-                        dpr = self.local_projection_widget.devicePixelRatioF()
-                        if dpr != 1.0:
-                            pixmap.setDevicePixelRatio(dpr)
                         self.local_projection_widget.general_bg_pixmap = pixmap
                         if self.projection_window:
                             self.projection_window.projection_widget.general_bg_pixmap = pixmap
@@ -2866,7 +2871,6 @@ class MainWindow(QMainWindow):
             self.topbar_bible_search.clear()
             self.load_bible_chapter_to_preview(sug["book"], 1)
             self._bible_show_chapters()
-
         elif sug["type"] == "chapter":
             # Navegar al capítulo
             self.topbar_bible_search.clear()
@@ -3119,5 +3123,6 @@ if __name__ == "__main__":
     app.setPalette(palette)
 
     window = MainWindow()
+    window.setMinimumSize(1024, 600)
     window.showMaximized()
     sys.exit(app.exec())
