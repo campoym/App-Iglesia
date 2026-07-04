@@ -1359,7 +1359,8 @@ class MainWindow(QMainWindow):
         font_controls_layout.setSpacing(6)
 
         lbl_font_title = QLabel("Tamaño de Letra:")
-        lbl_font_title.setStyleSheet("color: #a1a1aa; font-weight: bold; font-size: 11px;")
+        lbl_font_title.setStyleSheet(
+            "color: #a1a1aa; font-weight: bold; font-size: 11px;")
         font_controls_layout.addWidget(lbl_font_title)
         font_controls_layout.addStretch()
 
@@ -3192,14 +3193,16 @@ class MainWindow(QMainWindow):
                 self.projection_window.projection_widget.set_black_screen()
 
     def increase_font_size(self):
-        self.local_projection_widget.font_size_offset = getattr(self.local_projection_widget, "font_size_offset", 0) + 4
+        self.local_projection_widget.font_size_offset = getattr(
+            self.local_projection_widget, "font_size_offset", 0) + 4
         self.local_projection_widget.adjust_font_size()
         if self.projection_window and self.projection_window.isVisible():
             self.projection_window.projection_widget.font_size_offset = self.local_projection_widget.font_size_offset
             self.projection_window.projection_widget.adjust_font_size()
 
     def decrease_font_size(self):
-        self.local_projection_widget.font_size_offset = getattr(self.local_projection_widget, "font_size_offset", 0) - 4
+        self.local_projection_widget.font_size_offset = getattr(
+            self.local_projection_widget, "font_size_offset", 0) - 4
         self.local_projection_widget.adjust_font_size()
         if self.projection_window and self.projection_window.isVisible():
             self.projection_window.projection_widget.font_size_offset = self.local_projection_widget.font_size_offset
