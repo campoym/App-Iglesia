@@ -520,12 +520,64 @@ class CleanProjectionWidget(QFrame):
         self.is_black_screen = True
         self.current_song_title = ""
         self.current_slide_name = ""
+        self.font_size_offset = 0
+
+        # Inicializar fuentes
+        self.adjust_font_size()
+
+    def adjust_font_size(self):
+        w = self.width()
+        h = self.height()
+        if w <= 0 or h <= 0:
+            return
+
+        # Base font size: roughly 8.5% of height or 5.5% of width, whichever is smaller
+        base_size = int(min(w * 0.055, h * 0.085))
+
+        # Adaptive factor based on text length to prevent overflow
+        text = self.text_label.text()
+        length = len(text)
+
+        if length > 200:
+            scale = 0.65
+        elif length > 120:
+            scale = 0.75
+        elif length > 60:
+            scale = 0.85
+        else:
+            scale = 1.0
+
+        # Apply manual offset
+        offset = getattr(self, "font_size_offset", 0)
+        font_size = max(16, int(base_size * scale) + offset)
+
+        self.text_label.setStyleSheet(f"""
+            color: #ffffff; 
+            font-size: {font_size}px; 
+            font-weight: bold; 
+            background: transparent;
+        """)
+
+        # Responsive footer size
+        footer_font_size = max(11, int(h * 0.022))
+        self.footer_label.setStyleSheet(f"""
+            color: #71717a;
+            font-size: {footer_font_size}px;
+            font-weight: 500;
+            background: transparent;
+        """)
+
+        # Responsive margins
+        margin_w = max(20, int(w * 0.05))
+        margin_h = max(15, int(h * 0.04))
+        self.layout().setContentsMargins(margin_w, margin_h, margin_w, margin_h)
 
     def display_text(self, text, slide_name="", song_title=""):
         self.is_black_screen = False
         self.raw_pixmap = None
         self.text_label.setText(text)
         self.text_label.show()
+        self.adjust_font_size()
         self.update()
 
         if song_title:
@@ -577,6 +629,7 @@ class CleanProjectionWidget(QFrame):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self.adjust_font_size()
         self.update()
 
     def paintEvent(self, event):
@@ -618,7 +671,7 @@ class ProjectionWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Salida de Proyección (Pantalla Completa)")
+        self.setWindowTitle("Salida de Proyección (F11: Pantalla Completa)")
         self.setStyleSheet("background-color: #000000;")
         self.resize(800, 600)
 
@@ -632,6 +685,20 @@ class ProjectionWindow(QWidget):
         if event.key() == Qt.Key.Key_Escape:
             if self.isFullScreen():
                 self.showNormal()
+        elif event.key() == Qt.Key.Key_F11:
+            if self.isFullScreen():
+                self.showNormal()
+            else:
+                self.showFullScreen()
+        else:
+            super().keyPressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+        super().mouseDoubleClickEvent(event)
 
 
 class SectionBlockWidget(QFrame):
@@ -1275,6 +1342,33 @@ class MainWindow(QMainWindow):
         controls_layout.addWidget(self.btn_lyrics_bg)
 
         preview_layout.addLayout(controls_layout)
+
+        # Controles de tamaño de fuente
+        font_controls_layout = QHBoxLayout()
+        font_controls_layout.setSpacing(6)
+
+        lbl_font_title = QLabel("Tamaño de Letra:")
+        lbl_font_title.setStyleSheet("color: #a1a1aa; font-weight: bold; font-size: 11px;")
+        font_controls_layout.addWidget(lbl_font_title)
+        font_controls_layout.addStretch()
+
+        self.btn_font_up = QPushButton("Aumentar (+)")
+        self.btn_font_up.setObjectName("subtleCtrlBtn")
+        self.btn_font_up.clicked.connect(self.increase_font_size)
+        font_controls_layout.addWidget(self.btn_font_up)
+
+        self.btn_font_down = QPushButton("Reducir (-)")
+        self.btn_font_down.setObjectName("subtleCtrlBtn")
+        self.btn_font_down.clicked.connect(self.decrease_font_size)
+        font_controls_layout.addWidget(self.btn_font_down)
+
+        self.btn_font_reset = QPushButton("Restablecer")
+        self.btn_font_reset.setObjectName("subtleCtrlBtn")
+        self.btn_font_reset.clicked.connect(self.reset_font_size)
+        font_controls_layout.addWidget(self.btn_font_reset)
+
+        preview_layout.addLayout(font_controls_layout)
+
         splitter.addWidget(preview_container)
 
         # ---- Panel Derecho: Biblioteca Stacked + Ventana OBS ----
@@ -3063,6 +3157,10 @@ class MainWindow(QMainWindow):
             self.projection_window = ProjectionWindow()
             # Copiar la imagen de fondo actual a la nueva ventana externa
             self.projection_window.projection_widget.general_bg_pixmap = self.local_projection_widget.general_bg_pixmap
+            # Sincronizar offset de fuente
+            self.projection_window.projection_widget.font_size_offset = getattr(
+                self.local_projection_widget, "font_size_offset", 0
+            )
 
         if self.projection_window.isVisible():
             self.projection_window.hide()
@@ -3088,6 +3186,27 @@ class MainWindow(QMainWindow):
                 )
             elif self.current_projection_mode == "black":
                 self.projection_window.projection_widget.set_black_screen()
+
+    def increase_font_size(self):
+        self.local_projection_widget.font_size_offset = getattr(self.local_projection_widget, "font_size_offset", 0) + 4
+        self.local_projection_widget.adjust_font_size()
+        if self.projection_window and self.projection_window.isVisible():
+            self.projection_window.projection_widget.font_size_offset = self.local_projection_widget.font_size_offset
+            self.projection_window.projection_widget.adjust_font_size()
+
+    def decrease_font_size(self):
+        self.local_projection_widget.font_size_offset = getattr(self.local_projection_widget, "font_size_offset", 0) - 4
+        self.local_projection_widget.adjust_font_size()
+        if self.projection_window and self.projection_window.isVisible():
+            self.projection_window.projection_widget.font_size_offset = self.local_projection_widget.font_size_offset
+            self.projection_window.projection_widget.adjust_font_size()
+
+    def reset_font_size(self):
+        self.local_projection_widget.font_size_offset = 0
+        self.local_projection_widget.adjust_font_size()
+        if self.projection_window and self.projection_window.isVisible():
+            self.projection_window.projection_widget.font_size_offset = 0
+            self.projection_window.projection_widget.adjust_font_size()
 
     # =========================================================================
     # GESTIÓN DEL GUION (TEMPORAL)
