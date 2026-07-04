@@ -680,8 +680,9 @@ class CleanProjectionWidget(QFrame):
 class ProjectionWindow(QWidget):
     """Ventana externa independiente (Proyector/Pantalla Secundaria)."""
 
-    def __init__(self):
+    def __init__(self, close_callback=None):
         super().__init__()
+        self.close_callback = close_callback
         self.setWindowTitle("Salida de Proyección (F11: Pantalla Completa)")
         self.setStyleSheet("background-color: #000000;")
         self.resize(800, 600)
@@ -691,6 +692,11 @@ class ProjectionWindow(QWidget):
 
         self.projection_widget = CleanProjectionWidget(is_external=True)
         layout.addWidget(self.projection_widget)
+
+    def closeEvent(self, event):
+        if self.close_callback:
+            self.close_callback()
+        super().closeEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
@@ -1203,6 +1209,7 @@ class MainWindow(QMainWindow):
         # Estado de la proyección
         self.active_item_data = None
         self.projection_window = None
+        self.external_font_size_offset = 0
 
         self.current_projection_mode = "black"
         self.last_projected_mode = None
@@ -1383,10 +1390,9 @@ class MainWindow(QMainWindow):
         splitter.addWidget(preview_container)
 
         # ---- Panel Derecho: Biblioteca Stacked + Ventana OBS ----
-        right_container = QWidget()
-        right_layout = QVBoxLayout(right_container)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(15)
+        self.right_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.right_splitter.setObjectName("rightSplitter")
+        self.right_splitter.setChildrenCollapsible(False)
 
         # Stacked Widget para la biblioteca (Cerebro)
         self.library_stack = QStackedWidget()
@@ -1397,7 +1403,7 @@ class MainWindow(QMainWindow):
         self.setup_pptx_page()
         self.setup_guion_page()
 
-        right_layout.addWidget(self.library_stack, stretch=2)
+        self.right_splitter.addWidget(self.library_stack)
 
         # Panel Inferior: Ventana OBS Limpia y Más Grande
         self.obs_container = QFrame()
@@ -1412,11 +1418,18 @@ class MainWindow(QMainWindow):
         self.local_projection_widget = CleanProjectionWidget(is_external=False)
         obs_layout.addWidget(self.local_projection_widget)
 
-        right_layout.addWidget(self.obs_container, stretch=4)
+        self.right_splitter.addWidget(self.obs_container)
 
-        right_widget_wrap = QWidget()
-        right_widget_wrap.setLayout(right_layout)
-        splitter.addWidget(right_widget_wrap)
+        # Set initial stretch/sizes (equivalent to 2:4 stretch ratio)
+        self.right_splitter.setSizes([2000, 4000])
+
+        # Disable vertical splitter dragging initially
+        handle = self.right_splitter.handle(1)
+        if handle:
+            handle.setEnabled(False)
+            handle.setCursor(Qt.CursorShape.ArrowCursor)
+
+        splitter.addWidget(self.right_splitter)
 
         splitter.setSizes([420, 780])
 
@@ -3158,20 +3171,20 @@ class MainWindow(QMainWindow):
 
     def toggle_projection_window(self):
         if not self.projection_window:
-            self.projection_window = ProjectionWindow()
+            self.projection_window = ProjectionWindow(close_callback=self.on_projection_window_closed)
             # Copiar la imagen de fondo actual a la nueva ventana externa
             self.projection_window.projection_widget.general_bg_pixmap = self.local_projection_widget.general_bg_pixmap
             # Sincronizar offset de fuente
-            self.projection_window.projection_widget.font_size_offset = getattr(
-                self.local_projection_widget, "font_size_offset", 0
-            )
+            self.projection_window.projection_widget.font_size_offset = self.external_font_size_offset
 
         if self.projection_window.isVisible():
             self.projection_window.hide()
             self.btn_toggle_projector.setText("V. Externa")
+            self.adjust_obs_container_size(is_external_visible=False)
         else:
             self.projection_window.show()
             self.btn_toggle_projector.setText("Ocultar V. Ext")
+            self.adjust_obs_container_size(is_external_visible=True)
 
             # Sincronizar
             self.projection_window.projection_widget.is_black_screen = self.local_projection_widget.is_black_screen
@@ -3191,23 +3204,59 @@ class MainWindow(QMainWindow):
             elif self.current_projection_mode == "black":
                 self.projection_window.projection_widget.set_black_screen()
 
+    def on_projection_window_closed(self):
+        self.btn_toggle_projector.setText("V. Externa")
+        self.adjust_obs_container_size(is_external_visible=False)
+
+    def adjust_obs_container_size(self, is_external_visible):
+        if is_external_visible:
+            # Ventana externa activa:
+            # 1. Habilitar la interacción con el splitter para cambiar de tamaño
+            handle = self.right_splitter.handle(1)
+            if handle:
+                handle.setEnabled(True)
+                handle.setCursor(Qt.CursorShape.SplitVCursor)
+
+            # 2. Permitir que el obs_container sea más pequeño (mínimo 80px)
+            #    y no restringir su altura máxima para que el usuario pueda cambiarla libremente
+            self.obs_container.setMinimumHeight(80)
+            self.obs_container.setMaximumHeight(16777215)
+
+            # 3. Ajustar el tamaño inicial del splitter para que se haga un poco más chica de lo normal (e.g. 150px)
+            total_height = self.right_splitter.height()
+            if total_height > 200:
+                self.right_splitter.setSizes([total_height - 150, 150])
+            else:
+                self.right_splitter.setSizes([1000, 150])
+        else:
+            # Ventana externa inactiva:
+            # 1. Deshabilitar la interacción con el splitter
+            handle = self.right_splitter.handle(1)
+            if handle:
+                handle.setEnabled(False)
+                handle.setCursor(Qt.CursorShape.ArrowCursor)
+
+            # 2. Restaurar la altura mínima de 320px y sin tope máximo
+            self.obs_container.setMinimumHeight(320)
+            self.obs_container.setMaximumHeight(16777215)
+
+            # 3. Restaurar las proporciones normales (relación 2:4)
+            self.right_splitter.setSizes([2000, 4000])
+
     def increase_font_size(self):
-        self.local_projection_widget.font_size_offset = getattr(self.local_projection_widget, "font_size_offset", 0) + 4
-        self.local_projection_widget.adjust_font_size()
+        self.external_font_size_offset = getattr(self, "external_font_size_offset", 0) + 4
         if self.projection_window and self.projection_window.isVisible():
-            self.projection_window.projection_widget.font_size_offset = self.local_projection_widget.font_size_offset
+            self.projection_window.projection_widget.font_size_offset = self.external_font_size_offset
             self.projection_window.projection_widget.adjust_font_size()
 
     def decrease_font_size(self):
-        self.local_projection_widget.font_size_offset = getattr(self.local_projection_widget, "font_size_offset", 0) - 4
-        self.local_projection_widget.adjust_font_size()
+        self.external_font_size_offset = getattr(self, "external_font_size_offset", 0) - 4
         if self.projection_window and self.projection_window.isVisible():
-            self.projection_window.projection_widget.font_size_offset = self.local_projection_widget.font_size_offset
+            self.projection_window.projection_widget.font_size_offset = self.external_font_size_offset
             self.projection_window.projection_widget.adjust_font_size()
 
     def reset_font_size(self):
-        self.local_projection_widget.font_size_offset = 0
-        self.local_projection_widget.adjust_font_size()
+        self.external_font_size_offset = 0
         if self.projection_window and self.projection_window.isVisible():
             self.projection_window.projection_widget.font_size_offset = 0
             self.projection_window.projection_widget.adjust_font_size()
