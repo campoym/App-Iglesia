@@ -220,3 +220,17 @@ QPushButton#importBtn {
 QPushButton#importBtn:hover {
     background-color: #1d4ed8;
 }
+
+/* QSplitter Handles */
+QSplitter::handle {
+    background-color: #27272a;
+}
+QSplitter::handle:hover {
+    background-color: #3f3f46;
+}
+QSplitter::handle:vertical {
+    height: 4px;
+}
+QSplitter::handle:horizontal {
+    width: 4px;
+}
