@@ -142,7 +142,7 @@ class PreviewImageCardWidget(QFrame):
 class LibraryImageRowWidget(QWidget):
     """Fila de imagen para la biblioteca. Clickeable directamente."""
 
-    def __init__(self, title, file_path, on_add_clicked, parent=None):
+    def __init__(self, title, file_path, on_add_clicked, on_delete_clicked, parent=None):
         super().__init__(parent)
 
         layout = QHBoxLayout(self)
@@ -190,6 +190,28 @@ class LibraryImageRowWidget(QWidget):
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.sub_lbl.setAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+        # Botón eliminar
+        self.del_btn = QPushButton("🗑")
+        self.del_btn.setFixedSize(30, 30)
+        self.del_btn.setToolTip("Eliminar imagen")
+        self.del_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27272a;
+                color: #a1a1aa;
+                border: 1px solid #3f3f46;
+                border-radius: 6px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #7f1d1d;
+                color: #fca5a5;
+                border-color: #7f1d1d;
+            }
+        """)
+        self.del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.del_btn.clicked.connect(on_delete_clicked)
+        layout.addWidget(self.del_btn)
 
         # Botón para añadir al guión
         self.add_btn = QPushButton("+ Guión")
@@ -1366,7 +1388,7 @@ class MainWindow(QMainWindow):
         font_controls_layout.setSpacing(6)
 
         lbl_font_title = QLabel("Tamaño de Letra:")
-        lbl_font_title.setStyleSheet("color: #a1a1aa; font-weight: bold; font-size: 11px;")
+        lbl_font_title.setStyleSheet("color: #a1a1aa; font-weight: bold; font-size: 11px; background: transparent;")
         font_controls_layout.addWidget(lbl_font_title)
         font_controls_layout.addStretch()
 
@@ -1522,7 +1544,9 @@ class MainWindow(QMainWindow):
         # Estado interno del módulo biblia
         self.bible_current_book = "Juan"
         self.bible_current_version = "RVR60"
-        self.bible_search_mode = False  # False = capítulos, True = sugerencias
+        self.bible_current_chapter = None   # capítulo activo en la preview
+        self.bible_current_verse = None     # versículo activo (para mantener foco al cambiar versión)
+        self.bible_search_mode = False
 
         # ---- Fila: selector de libro + versiones ----
         selector_row = QHBoxLayout()
@@ -1557,7 +1581,7 @@ class MainWindow(QMainWindow):
 
         # Pastillas de versión
         self.bible_version_buttons = {}
-        for version in ["RVR60", "NVI", "LBLA", "DHH"]:
+        for version in ["RVR60", "NVI", "RV1569", "DHH"]:
             btn = QPushButton(version)
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1686,8 +1710,17 @@ class MainWindow(QMainWindow):
             is_active = (v == version)
             btn.setChecked(is_active)
             btn.setStyleSheet(self._version_btn_style(is_active))
-        # Recargar capítulos por si la versión no tiene ese libro completo
-        self.load_bible_chapters(self.bible_current_book)
+
+        # Si hay un capítulo activo en la preview, recargarlo con la nueva versión
+        if self.bible_current_chapter:
+            self.load_bible_chapter_to_preview(
+                self.bible_current_book,
+                self.bible_current_chapter,
+                focus_verse=self.bible_current_verse
+            )
+        else:
+            # Sin contenido activo, solo refrescar el grid de capítulos
+            self.load_bible_chapters(self.bible_current_book)
 
     def on_bible_book_changed(self, book_name):
         if book_name.startswith("──"):
@@ -1833,6 +1866,10 @@ class MainWindow(QMainWindow):
 
         # Sincronizar estado interno + combo de libro (sin disparar su señal para evitar loops)
         self.bible_current_book = book_name
+        self.bible_current_chapter = chapter_num
+        # Si no hay focus_verse, resetear el versículo recordado
+        if focus_verse is None:
+            self.bible_current_verse = None
         if self.bible_book_combo.currentText() != book_name:
             self.bible_book_combo.blockSignals(True)
             self.bible_book_combo.setCurrentText(book_name)
@@ -1855,7 +1892,8 @@ class MainWindow(QMainWindow):
                 "mode": "text",
                 "text": verse_text,
                 "header": reference,
-                "song_title": f"{book_name} {chapter_num} · {self.bible_current_version}"
+                "song_title": f"{book_name} {chapter_num} · {self.bible_current_version}",
+                "bible_verse": verse_num   # para rastrear versículo activo al cambiar versión
             })
 
             # Contenedor: tarjeta + botón "+ Guión" a la derecha
@@ -2236,15 +2274,46 @@ class MainWindow(QMainWindow):
             def make_add_callback(iid=image_id, iname=name, ipath=abs_path):
                 return lambda: self.add_image_to_guion(iid, iname, ipath)
 
+            def make_delete_callback(iid=image_id, iname=name, ipath=abs_path):
+                return lambda: self.delete_image(iid, iname, ipath)
+
             widget = LibraryImageRowWidget(
                 title=name,
                 file_path=abs_path,
-                on_add_clicked=make_add_callback()
+                on_add_clicked=make_add_callback(),
+                on_delete_clicked=make_delete_callback()
             )
             item.setSizeHint(widget.minimumSizeHint())
             self.images_list.setItemWidget(item, widget)
 
         conn.close()
+
+    def delete_image(self, image_id, name, file_path):
+        reply = QMessageBox.question(
+            self,
+            "Eliminar imagen",
+            f"¿Estás seguro que quieres eliminar «{name}»?\nEsta acción no se puede deshacer.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        conn = sqlite3.connect(database.DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM images WHERE id = ?", (image_id,))
+        conn.commit()
+        conn.close()
+
+        # Borrar el archivo del disco
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+
+        self.preview_list.clear()
+        self.load_images_library(self.image_search.text())
 
     def filter_images(self):
         self.load_images_library(self.image_search.text())
@@ -3104,6 +3173,10 @@ class MainWindow(QMainWindow):
             text = data["text"]
             header = data.get("header", "")
             song_title = data.get("song_title", "")
+
+            # Si es un versículo de Biblia, recordar cuál está activo
+            if "bible_verse" in data:
+                self.bible_current_verse = data["bible_verse"]
 
             self.current_projection_mode = "text"
             self.last_projected_mode = "text"
