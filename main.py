@@ -1231,6 +1231,7 @@ class MainWindow(QMainWindow):
         # Estado de la proyección
         self.active_item_data = None
         self.projection_window = None
+        self.projection_window_2 = None
         self.external_font_size_offset = 0
 
         self.current_projection_mode = "black"
@@ -1375,6 +1376,12 @@ class MainWindow(QMainWindow):
         self.btn_toggle_projector.clicked.connect(
             self.toggle_projection_window)
         controls_layout.addWidget(self.btn_toggle_projector)
+
+        self.btn_toggle_projector_2 = QPushButton("V. Externa 2")
+        self.btn_toggle_projector_2.setObjectName("subtleCtrlBtn")
+        self.btn_toggle_projector_2.clicked.connect(
+            self.toggle_projection_window_2)
+        controls_layout.addWidget(self.btn_toggle_projector_2)
 
         self.btn_lyrics_bg = QPushButton("Fondo Letra")
         self.btn_lyrics_bg.setObjectName("subtleCtrlBtn")
@@ -2760,10 +2767,14 @@ class MainWindow(QMainWindow):
                         self.local_projection_widget.general_bg_pixmap = pixmap
                         if self.projection_window:
                             self.projection_window.projection_widget.general_bg_pixmap = pixmap
+                        if self.projection_window_2:
+                            self.projection_window_2.projection_widget.general_bg_pixmap = pixmap
 
                         self.local_projection_widget.update()
                         if self.projection_window:
                             self.projection_window.projection_widget.update()
+                        if self.projection_window_2:
+                            self.projection_window_2.projection_widget.update()
 
                         QMessageBox.information(
                             self, "Fondo Guardado", "Se ha establecido el fondo general para las letras.")
@@ -2783,10 +2794,14 @@ class MainWindow(QMainWindow):
             self.local_projection_widget.general_bg_pixmap = None
             if self.projection_window:
                 self.projection_window.projection_widget.general_bg_pixmap = None
+            if self.projection_window_2:
+                self.projection_window_2.projection_widget.general_bg_pixmap = None
 
             self.local_projection_widget.update()
             if self.projection_window:
                 self.projection_window.projection_widget.update()
+            if self.projection_window_2:
+                self.projection_window_2.projection_widget.update()
 
             QMessageBox.information(
                 self, "Fondo Quitado", "Se ha quitado el fondo general para las letras (ahora es negro sólido).")
@@ -2803,6 +2818,8 @@ class MainWindow(QMainWindow):
                         self.local_projection_widget.general_bg_pixmap = pixmap
                         if self.projection_window:
                             self.projection_window.projection_widget.general_bg_pixmap = pixmap
+                        if self.projection_window_2:
+                            self.projection_window_2.projection_widget.general_bg_pixmap = pixmap
                         self.local_projection_widget.update()
             except Exception as e:
                 print(f"Error cargando fondo de letras persistido: {e}")
@@ -3187,9 +3204,13 @@ class MainWindow(QMainWindow):
             # Local
             self.local_projection_widget.display_text(text, header, song_title)
 
-            # Externo
+            # Externo 1
             if self.projection_window and self.projection_window.isVisible():
                 self.projection_window.projection_widget.display_text(
+                    text, header, song_title)
+            # Externo 2
+            if self.projection_window_2 and self.projection_window_2.isVisible():
+                self.projection_window_2.projection_widget.display_text(
                     text, header, song_title)
         elif mode == "image":
             file_path = data["file_path"]
@@ -3205,9 +3226,13 @@ class MainWindow(QMainWindow):
             # Local
             self.local_projection_widget.display_image(file_path, header, name)
 
-            # Externo
+            # Externo 1
             if self.projection_window and self.projection_window.isVisible():
                 self.projection_window.projection_widget.display_image(
+                    file_path, header, name)
+            # Externo 2
+            if self.projection_window_2 and self.projection_window_2.isVisible():
+                self.projection_window_2.projection_widget.display_image(
                     file_path, header, name)
 
     def project_black(self):
@@ -3215,12 +3240,16 @@ class MainWindow(QMainWindow):
         self.local_projection_widget.set_black_screen()
         if self.projection_window and self.projection_window.isVisible():
             self.projection_window.projection_widget.set_black_screen()
+        if self.projection_window_2 and self.projection_window_2.isVisible():
+            self.projection_window_2.projection_widget.set_black_screen()
 
     def project_clear_text(self):
         if self.current_projection_mode == "text":
             self.local_projection_widget.clear_text_only()
             if self.projection_window and self.projection_window.isVisible():
                 self.projection_window.projection_widget.clear_text_only()
+            if self.projection_window_2 and self.projection_window_2.isVisible():
+                self.projection_window_2.projection_widget.clear_text_only()
 
     def project_restore(self):
         if self.last_projected_mode == "text":
@@ -3232,6 +3261,10 @@ class MainWindow(QMainWindow):
                 self.projection_window.projection_widget.display_text(
                     self.last_projected_text, self.last_projected_header, self.last_projected_song_title
                 )
+            if self.projection_window_2 and self.projection_window_2.isVisible():
+                self.projection_window_2.projection_widget.display_text(
+                    self.last_projected_text, self.last_projected_header, self.last_projected_song_title
+                )
         elif self.last_projected_mode == "image":
             self.current_projection_mode = "image"
             self.local_projection_widget.display_image(
@@ -3241,6 +3274,49 @@ class MainWindow(QMainWindow):
                 self.projection_window.projection_widget.display_image(
                     self.last_projected_image_path, self.last_projected_header, self.last_projected_song_title
                 )
+            if self.projection_window_2 and self.projection_window_2.isVisible():
+                self.projection_window_2.projection_widget.display_image(
+                    self.last_projected_image_path, self.last_projected_header, self.last_projected_song_title
+                )
+
+    def toggle_projection_window_2(self):
+        if not self.projection_window_2:
+            self.projection_window_2 = ProjectionWindow(
+                close_callback=self.on_projection_window_2_closed)
+            self.projection_window_2.setWindowTitle(
+                "Salida de Proyección 2 (Pantalla Completa)")
+            self.projection_window_2.projection_widget.general_bg_pixmap = \
+                self.local_projection_widget.general_bg_pixmap
+            self.projection_window_2.projection_widget.font_size_offset = \
+                self.external_font_size_offset
+
+        if self.projection_window_2.isVisible():
+            self.projection_window_2.hide()
+            self.btn_toggle_projector_2.setText("V. Externa 2")
+        else:
+            self.projection_window_2.show()
+            self.btn_toggle_projector_2.setText("Ocultar V. Ext 2")
+
+            # Sincronizar estado actual
+            self.projection_window_2.projection_widget.is_black_screen = \
+                self.local_projection_widget.is_black_screen
+            if self.current_projection_mode == "text":
+                self.projection_window_2.projection_widget.display_text(
+                    self.last_projected_text,
+                    self.last_projected_header,
+                    self.last_projected_song_title
+                )
+            elif self.current_projection_mode == "image":
+                self.projection_window_2.projection_widget.display_image(
+                    self.last_projected_image_path,
+                    self.last_projected_header,
+                    self.last_projected_song_title
+                )
+            elif self.current_projection_mode == "black":
+                self.projection_window_2.projection_widget.set_black_screen()
+
+    def on_projection_window_2_closed(self):
+        self.btn_toggle_projector_2.setText("V. Externa 2")
 
     def toggle_projection_window(self):
         if not self.projection_window:
@@ -3321,18 +3397,27 @@ class MainWindow(QMainWindow):
         if self.projection_window and self.projection_window.isVisible():
             self.projection_window.projection_widget.font_size_offset = self.external_font_size_offset
             self.projection_window.projection_widget.adjust_font_size()
+        if self.projection_window_2 and self.projection_window_2.isVisible():
+            self.projection_window_2.projection_widget.font_size_offset = self.external_font_size_offset
+            self.projection_window_2.projection_widget.adjust_font_size()
 
     def decrease_font_size(self):
         self.external_font_size_offset = getattr(self, "external_font_size_offset", 0) - 4
         if self.projection_window and self.projection_window.isVisible():
             self.projection_window.projection_widget.font_size_offset = self.external_font_size_offset
             self.projection_window.projection_widget.adjust_font_size()
+        if self.projection_window_2 and self.projection_window_2.isVisible():
+            self.projection_window_2.projection_widget.font_size_offset = self.external_font_size_offset
+            self.projection_window_2.projection_widget.adjust_font_size()
 
     def reset_font_size(self):
         self.external_font_size_offset = 0
         if self.projection_window and self.projection_window.isVisible():
             self.projection_window.projection_widget.font_size_offset = 0
             self.projection_window.projection_widget.adjust_font_size()
+        if self.projection_window_2 and self.projection_window_2.isVisible():
+            self.projection_window_2.projection_widget.font_size_offset = 0
+            self.projection_window_2.projection_widget.adjust_font_size()
 
     # =========================================================================
     # GESTIÓN DEL GUION (TEMPORAL)
