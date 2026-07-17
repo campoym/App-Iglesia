@@ -10,12 +10,35 @@ from PyQt6.QtWidgets import (
     QFileDialog, QMessageBox, QSplitter, QFrame, QGridLayout, QStackedWidget,
     QDialog, QTextEdit, QScrollArea, QComboBox, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QPixmap, QColor
+from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtGui import QPixmap, QColor, QShortcut, QKeySequence
 
 import database
 import pptx_helper
 import pdf_helper
+
+# Conexión persistente a SQLite — se abre una vez y se reutiliza
+_DB_CONN = None
+
+def get_db():
+    """Retorna la conexión persistente a la base de datos."""
+    global _DB_CONN
+    if _DB_CONN is None:
+        _DB_CONN = sqlite3.connect(database.DB_PATH, check_same_thread=False)
+        _DB_CONN.create_function("remove_accents", 1, remove_accents)
+        _DB_CONN.row_factory = sqlite3.Row
+        # Crear índices si no existen (primera vez o DB nueva)
+        _DB_CONN.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title);
+            CREATE INDEX IF NOT EXISTS idx_bible_lookup ON bible(book, chapter, version);
+            CREATE INDEX IF NOT EXISTS idx_bible_verse ON bible(book, chapter, verse, version);
+            CREATE INDEX IF NOT EXISTS idx_images_name ON images(name);
+            PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            PRAGMA cache_size=-32000;
+        """)
+        _DB_CONN.commit()
+    return _DB_CONN
 
 # Configurar carpetas de almacenamiento para recursos
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -722,7 +745,12 @@ class ProjectionWindow(QWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
-            if self.isFullScreen():
+            # ESC → pantalla negra desde la ventana de proyección
+            main_window = self.parent() if self.parent() else None
+            # Buscar la MainWindow a través del callback
+            if hasattr(self, "_main_window_ref") and self._main_window_ref:
+                self._main_window_ref.project_black()
+            elif self.isFullScreen():
                 self.showNormal()
         elif event.key() == Qt.Key.Key_F11:
             if self.isFullScreen():
@@ -1135,12 +1163,11 @@ class SongEditorDialog(QDialog):
         block.deleteLater()
 
     def _load_existing_song(self):
-        conn = sqlite3.connect(database.DB_PATH)
+        conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT title, category, tone, lyrics FROM songs WHERE id = ?", (self.song_id,))
         row = cursor.fetchone()
-        conn.close()
         if not row:
             return
         title, category, tone, lyrics = row
@@ -1187,7 +1214,7 @@ class SongEditorDialog(QDialog):
                 parts.append(f"[{label}]\n{content}")
         lyrics = "\n\n".join(parts)
 
-        conn = sqlite3.connect(database.DB_PATH)
+        conn = get_db()
         cursor = conn.cursor()
 
         # Migración segura: agregar columna tone si no existe
@@ -1208,7 +1235,6 @@ class SongEditorDialog(QDialog):
                 (title, category, tone, lyrics)
             )
         conn.commit()
-        conn.close()
         self.accept()
 
 
@@ -1246,6 +1272,10 @@ class MainWindow(QMainWindow):
         self.load_images_library()
         self.load_pptx_library()
         self.load_persisted_lyrics_bg()
+
+        # Atajo ESC → pantalla negra en todas las ventanas externas
+        esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        esc_shortcut.activated.connect(self.project_black)
 
     def load_styles(self):
         qss_path = os.path.join(PROJECT_DIR, "styles.qss")
@@ -1301,6 +1331,12 @@ class MainWindow(QMainWindow):
             self._on_topbar_bible_search)
         self.topbar_bible_search.textChanged.connect(
             self._on_topbar_bible_search_changed)
+
+        # Debounce timer para el buscador de biblia (evita queries por cada keystroke)
+        self._bible_search_timer = QTimer()
+        self._bible_search_timer.setSingleShot(True)
+        self._bible_search_timer.setInterval(300)  # 300ms de espera
+        self._bible_search_timer.timeout.connect(self._fire_bible_search)
         top_bar_layout.addWidget(self.topbar_bible_search)
 
         window_layout.addWidget(self.top_bar)
@@ -1481,8 +1517,14 @@ class MainWindow(QMainWindow):
         self.song_search = QLineEdit()
         self.song_search.setObjectName("searchBar")
         self.song_search.setPlaceholderText("🔎 Buscar cantos...")
-        self.song_search.textChanged.connect(self.filter_songs)
+        self.song_search.textChanged.connect(self._on_song_search_changed)
         top_row.addWidget(self.song_search)
+
+        # Debounce timer para cantos
+        self._song_search_timer = QTimer()
+        self._song_search_timer.setSingleShot(True)
+        self._song_search_timer.setInterval(250)
+        self._song_search_timer.timeout.connect(self.filter_songs)
 
         new_song_btn = QPushButton("+ Nuevo Canto")
         new_song_btn.setObjectName("importBtn")
@@ -1746,14 +1788,13 @@ class MainWindow(QMainWindow):
             if child.widget():
                 child.widget().deleteLater()
 
-        conn = sqlite3.connect(database.DB_PATH)
+        conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT DISTINCT chapter FROM bible WHERE book = ? AND version = ? ORDER BY chapter",
             (book_name, self.bible_current_version)
         )
         chapters = [row[0] for row in cursor.fetchall()]
-        conn.close()
 
         if not chapters:
             empty_lbl = QLabel(
@@ -1857,14 +1898,13 @@ class MainWindow(QMainWindow):
         """Carga todos los versículos de un capítulo en la Preview izquierda.
         También sincroniza el selector de libro y el grid de capítulos visualmente,
         sin importar si la llamada vino de un click manual o del buscador."""
-        conn = sqlite3.connect(database.DB_PATH)
+        conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT verse, text FROM bible WHERE book = ? AND chapter = ? AND version = ? ORDER BY verse",
             (book_name, chapter_num, self.bible_current_version)
         )
         verses = cursor.fetchall()
-        conn.close()
 
         if not verses:
             QMessageBox.warning(
@@ -2250,8 +2290,7 @@ class MainWindow(QMainWindow):
 
     def load_images_library(self, filter_text=""):
         self.images_list.clear()
-        conn = sqlite3.connect(database.DB_PATH)
-        conn.create_function("remove_accents", 1, remove_accents)
+        conn = get_db()
         cursor = conn.cursor()
 
         if filter_text:
@@ -2293,8 +2332,6 @@ class MainWindow(QMainWindow):
             item.setSizeHint(widget.minimumSizeHint())
             self.images_list.setItemWidget(item, widget)
 
-        conn.close()
-
     def delete_image(self, image_id, name, file_path):
         reply = QMessageBox.question(
             self,
@@ -2306,11 +2343,10 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        conn = sqlite3.connect(database.DB_PATH)
+        conn = get_db()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM images WHERE id = ?", (image_id,))
         conn.commit()
-        conn.close()
 
         # Borrar el archivo del disco
         if file_path and os.path.exists(file_path):
@@ -2340,7 +2376,7 @@ class MainWindow(QMainWindow):
             if not os.path.exists(imported_dir):
                 os.makedirs(imported_dir)
 
-            conn = sqlite3.connect(database.DB_PATH)
+            conn = get_db()
             cursor = conn.cursor()
 
             imported_count = 0
@@ -2371,7 +2407,6 @@ class MainWindow(QMainWindow):
                         self, "Error de Importación", f"No se pudo copiar {base_name}: {str(e)}")
 
             conn.commit()
-            conn.close()
 
             if imported_count > 0:
                 self.load_images_library()
@@ -2468,8 +2503,7 @@ class MainWindow(QMainWindow):
 
     def load_pptx_library(self, filter_text=""):
         self.pptx_list.clear()
-        conn = sqlite3.connect(database.DB_PATH)
-        conn.create_function("remove_accents", 1, remove_accents)
+        conn = get_db()
         cursor = conn.cursor()
 
         if filter_text:
@@ -2509,8 +2543,6 @@ class MainWindow(QMainWindow):
             item.setSizeHint(widget.minimumSizeHint())
             self.pptx_list.setItemWidget(item, widget)
 
-        conn.close()
-
     def filter_pptx(self):
         self.load_pptx_library(self.pptx_search.text())
 
@@ -2525,14 +2557,13 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        conn = sqlite3.connect(database.DB_PATH)
+        conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT file_path FROM pptx_files WHERE id = ?", (pptx_id,))
         row = cursor.fetchone()
         cursor.execute("DELETE FROM pptx_files WHERE id = ?", (pptx_id,))
         conn.commit()
-        conn.close()
 
         # Borrar también el archivo original y la carpeta de diapositivas generadas en disco
         if row:
@@ -2572,7 +2603,7 @@ class MainWindow(QMainWindow):
             if not os.path.exists(imported_dir):
                 os.makedirs(imported_dir)
 
-            conn = sqlite3.connect(database.DB_PATH)
+            conn = get_db()
             cursor = conn.cursor()
 
             imported_count = 0
@@ -2625,7 +2656,6 @@ class MainWindow(QMainWindow):
                         self, "Error de Importación", f"No se pudo procesar {base_name}: {str(e)}")
 
             conn.commit()
-            conn.close()
 
             if imported_count > 0:
                 self.load_pptx_library()
@@ -2830,26 +2860,24 @@ class MainWindow(QMainWindow):
 
     def load_songs_library(self, filter_text=""):
         self.songs_list.clear()
-        conn = sqlite3.connect(database.DB_PATH)
-        # Registrar la función de normalización en la conexión de SQLite
-        conn.create_function("remove_accents", 1, remove_accents)
+        conn = get_db()
         cursor = conn.cursor()
 
         if filter_text:
             normalized_search = remove_accents(filter_text)
             cursor.execute(
-                "SELECT id, title, category, lyrics FROM songs "
-                "WHERE remove_accents(title) LIKE ? OR remove_accents(lyrics) LIKE ? "
+                "SELECT id, title, category FROM songs "
+                "WHERE remove_accents(title) LIKE ? "
                 "ORDER BY title",
-                (f"%{normalized_search}%", f"%{normalized_search}%")
+                (f"%{normalized_search}%",)
             )
         else:
             cursor.execute(
-                "SELECT id, title, category, lyrics FROM songs ORDER BY title")
+                "SELECT id, title, category FROM songs ORDER BY title")
 
         rows = cursor.fetchall()
         for row in rows:
-            song_id, title, category, lyrics = row
+            song_id, title, category = row[0], row[1], row[2]
 
             item = QListWidgetItem(self.songs_list)
             item.setData(Qt.ItemDataRole.UserRole, {
@@ -2874,10 +2902,20 @@ class MainWindow(QMainWindow):
             item.setSizeHint(widget.minimumSizeHint())
             self.songs_list.setItemWidget(item, widget)
 
-        conn.close()
+    def _on_song_search_changed(self, text):
+        """Reinicia el timer de debounce al escribir."""
+        self._song_search_timer.start()
 
     def filter_songs(self):
         self.load_songs_library(self.song_search.text())
+
+    def _fire_bible_search(self):
+        """Se llama 300ms después del último keystroke en el buscador de biblia."""
+        query = self.topbar_bible_search.text().strip()
+        if query:
+            self._update_bible_suggestions(query)
+        else:
+            self._bible_show_chapters()
 
     def open_new_song_dialog(self, song_id=None):
         dialog = SongEditorDialog(parent=self, song_id=song_id)
@@ -2893,11 +2931,10 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Cancel
         )
         if reply == QMessageBox.StandardButton.Yes:
-            conn = sqlite3.connect(database.DB_PATH)
+            conn = get_db()
             cursor = conn.cursor()
             cursor.execute("DELETE FROM songs WHERE id = ?", (song_id,))
             conn.commit()
-            conn.close()
             self.preview_list.clear()
             self.load_songs_library(self.song_search.text())
 
@@ -2937,13 +2974,12 @@ class MainWindow(QMainWindow):
         self._update_bible_suggestions(query)
 
     def _on_topbar_bible_search_changed(self, text):
-        """Se llama en tiempo real conforme escribe — muestra sugerencias."""
-        query = text.strip()
-        if not query:
-            # Sin texto → volver al modo capítulos
+        """Se llama en tiempo real conforme escribe — dispara debounce."""
+        if not text.strip():
+            self._bible_search_timer.stop()
             self._bible_show_chapters()
             return
-        self._update_bible_suggestions(query)
+        self._bible_search_timer.start()  # reinicia el timer en cada keystroke
 
     def _update_bible_suggestions(self, query):
         """Genera sugerencias de libros, capítulos o versículos según lo escrito."""
@@ -3112,12 +3148,11 @@ class MainWindow(QMainWindow):
     # =========================================================================
 
     def load_song_to_preview_by_id(self, song_id):
-        conn = sqlite3.connect(database.DB_PATH)
+        conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT title, lyrics, category FROM songs WHERE id = ?", (song_id,))
         res = cursor.fetchone()
-        conn.close()
 
         if not res:
             return
@@ -3283,6 +3318,7 @@ class MainWindow(QMainWindow):
         if not self.projection_window_2:
             self.projection_window_2 = ProjectionWindow(
                 close_callback=self.on_projection_window_2_closed)
+            self.projection_window_2._main_window_ref = self
             self.projection_window_2.setWindowTitle(
                 "Salida de Proyección 2 (Pantalla Completa)")
             self.projection_window_2.projection_widget.general_bg_pixmap = \
@@ -3321,6 +3357,7 @@ class MainWindow(QMainWindow):
     def toggle_projection_window(self):
         if not self.projection_window:
             self.projection_window = ProjectionWindow(close_callback=self.on_projection_window_closed)
+            self.projection_window._main_window_ref = self
             # Copiar la imagen de fondo actual a la nueva ventana externa
             self.projection_window.projection_widget.general_bg_pixmap = self.local_projection_widget.general_bg_pixmap
             # Sincronizar offset de fuente
