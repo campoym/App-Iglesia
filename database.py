@@ -1,9 +1,22 @@
 import os
+import sys
+import shutil
 import sqlite3
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "iglesia.db")
+if getattr(sys, 'frozen', False):
+    DB_PATH = os.path.join(os.path.dirname(sys.executable), "iglesia.db")
+else:
+    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "iglesia.db")
 
 def init_db():
+    if getattr(sys, 'frozen', False) and not os.path.exists(DB_PATH):
+        bundled_db = os.path.join(sys._MEIPASS, "iglesia.db")
+        if os.path.exists(bundled_db):
+            try:
+                shutil.copy2(bundled_db, DB_PATH)
+            except Exception as e:
+                print(f"Error copying bundled database: {e}")
+
     db_exists = os.path.exists(DB_PATH)
 
     conn = sqlite3.connect(DB_PATH)
@@ -29,7 +42,7 @@ def init_db():
         chapter INTEGER NOT NULL,
         verse INTEGER NOT NULL,
         text TEXT NOT NULL,
-        version TEXT DEFAULT 'RV1960'
+        version TEXT DEFAULT 'RVR60'
     )
     """)
 
@@ -100,17 +113,17 @@ def insert_sample_bible(conn):
     cursor = conn.cursor()
     
     bible_data = [
-        ("Génesis", 1, 1, "En el principio creó Dios los cielos y la tierra.", "RV1960"),
-        ("Génesis", 1, 2, "Y la tierra estaba desordenada y vacía, y las tinieblas estaban sobre la faz del abismo, y el Espíritu de Dios se movía sobre la faz de las aguas.", "RV1960"),
-        ("Génesis", 1, 3, "Y dijo Dios: Sea la luz; y fue la luz.", "RV1960"),
-        ("Génesis", 1, 4, "Y vio Dios que la luz era buena; y separó Dios la luz de las tinieblas.", "RV1960"),
-        ("Génesis", 1, 5, "Y llamó Dios a la luz Día, y a las tinieblas llamó Noche. Y fue la tarde y la mañana un día.", "RV1960"),
+        ("Génesis", 1, 1, "En el principio creó Dios los cielos y la tierra.", "RVR60"),
+        ("Génesis", 1, 2, "Y la tierra estaba desordenada y vacía, y las tinieblas estaban sobre la faz del abismo, y el Espíritu de Dios se movía sobre la faz de las aguas.", "RVR60"),
+        ("Génesis", 1, 3, "Y dijo Dios: Sea la luz; y fue la luz.", "RVR60"),
+        ("Génesis", 1, 4, "Y vio Dios que la luz era buena; y separó Dios la luz de las tinieblas.", "RVR60"),
+        ("Génesis", 1, 5, "Y llamó Dios a la luz Día, y a las tinieblas llamó Noche. Y fue la tarde y la mañana un día.", "RVR60"),
         
-        ("Salmos", 23, 1, "Jehová es mi pastor; nada me faltará.", "RV1960"),
-        ("Salmos", 23, 2, "En lugares de delicados pastos me hará descansar; Junto a aguas de reposo me pastoreará.", "RV1960"),
-        ("Salmos", 23, 3, "Confortará mi alma; Me guiará por sendas de justicia por amor de su nombre.", "RV1960"),
+        ("Salmos", 23, 1, "Jehová es mi pastor; nada me faltará.", "RVR60"),
+        ("Salmos", 23, 2, "En lugares de delicados pastos me hará descansar; Junto a aguas de reposo me pastoreará.", "RVR60"),
+        ("Salmos", 23, 3, "Confortará mi alma; Me guiará por sendas de justicia por amor de su nombre.", "RVR60"),
         
-        ("Juan", 3, 16, "Porque de tal manera amó Dios al mundo, que ha dado a su Hijo unigénito, para que todo aquel que en él cree, no se pierda, mas tenga vida eterna.", "RV1960")
+        ("Juan", 3, 16, "Porque de tal manera amó Dios al mundo, que ha dado a su Hijo unigénito, para que todo aquel que en él cree, no se pierda, mas tenga vida eterna.", "RVR60")
     ]
     
     cursor.executemany("INSERT INTO bible (book, chapter, verse, text, version) VALUES (?, ?, ?, ?, ?)", bible_data)

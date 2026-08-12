@@ -8,40 +8,26 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLineEdit, QLabel,
     QFileDialog, QMessageBox, QSplitter, QFrame, QGridLayout, QStackedWidget,
-    QDialog, QTextEdit, QScrollArea, QComboBox, QSizePolicy
+    QDialog, QTextEdit, QScrollArea, QComboBox, QSizePolicy, QMenu
 )
-from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtCore import Qt, QSize, QTimer, QPoint
 from PyQt6.QtGui import QPixmap, QColor, QShortcut, QKeySequence
 
 import database
 import pptx_helper
 import pdf_helper
 
-# Conexión persistente a SQLite — se abre una vez y se reutiliza
-_DB_CONN = None
-
-def get_db():
-    """Retorna la conexión persistente a la base de datos."""
-    global _DB_CONN
-    if _DB_CONN is None:
-        _DB_CONN = sqlite3.connect(database.DB_PATH, check_same_thread=False)
-        _DB_CONN.create_function("remove_accents", 1, remove_accents)
-        _DB_CONN.row_factory = sqlite3.Row
-        # Crear índices si no existen (primera vez o DB nueva)
-        _DB_CONN.executescript("""
-            CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title);
-            CREATE INDEX IF NOT EXISTS idx_bible_lookup ON bible(book, chapter, version);
-            CREATE INDEX IF NOT EXISTS idx_bible_verse ON bible(book, chapter, verse, version);
-            CREATE INDEX IF NOT EXISTS idx_images_name ON images(name);
-            PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            PRAGMA cache_size=-32000;
-        """)
-        _DB_CONN.commit()
-    return _DB_CONN
-
 # Configurar carpetas de almacenamiento para recursos
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+# PROJECT_DIR apunta siempre al directorio donde está el .exe o el main.py
+# sys.frozen es True cuando corre empaquetado con PyInstaller
+if getattr(sys, 'frozen', False):
+    PROJECT_DIR = os.path.dirname(sys.executable)
+else:
+    PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# DB_PATH usa PROJECT_DIR — funciona en desarrollo y empaquetado con PyInstaller
+DB_PATH = os.path.join(PROJECT_DIR, "iglesia.db")
+database.DB_PATH = DB_PATH  # override para que todo el código use el path correcto
 database.init_db()
 
 
@@ -555,10 +541,18 @@ class CleanProjectionWidget(QFrame):
 
         main_layout.addLayout(bottom_layout)
 
+        self.is_external = is_external
+
         # Ocultar controles administrativos en ventana externa
         if is_external:
             self.obs_title.hide()
             self.help_btn.hide()
+        else:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip("Haz clic izquierdo para seleccionar la pantalla de proyección")
+            self.text_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            self.obs_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            self.footer_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
         self.raw_pixmap = None
         self.general_bg_pixmap = None
@@ -720,6 +714,14 @@ class CleanProjectionWidget(QFrame):
 
         painter.end()
         super().paintEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and not getattr(self, "is_external", False):
+            main_win = self.window()
+            if hasattr(main_win, "show_screen_menu"):
+                main_win.show_screen_menu(self, event.globalPosition().toPoint())
+                return
+        super().mousePressEvent(event)
 
 
 class ProjectionWindow(QWidget):
@@ -1152,7 +1154,6 @@ class SongEditorDialog(QDialog):
         self.sections_layout.insertWidget(idx, block)
         self.section_widgets.append(block)
 
-        from PyQt6.QtCore import QTimer
         QTimer.singleShot(50, lambda: self.scroll_area.verticalScrollBar().setValue(
             self.scroll_area.verticalScrollBar().maximum()
         ))
@@ -1163,11 +1164,12 @@ class SongEditorDialog(QDialog):
         block.deleteLater()
 
     def _load_existing_song(self):
-        conn = get_db()
+        conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT title, category, tone, lyrics FROM songs WHERE id = ?", (self.song_id,))
         row = cursor.fetchone()
+        conn.close()
         if not row:
             return
         title, category, tone, lyrics = row
@@ -1214,7 +1216,7 @@ class SongEditorDialog(QDialog):
                 parts.append(f"[{label}]\n{content}")
         lyrics = "\n\n".join(parts)
 
-        conn = get_db()
+        conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
 
         # Migración segura: agregar columna tone si no existe
@@ -1235,6 +1237,7 @@ class SongEditorDialog(QDialog):
                 (title, category, tone, lyrics)
             )
         conn.commit()
+        conn.close()
         self.accept()
 
 
@@ -1258,6 +1261,14 @@ class MainWindow(QMainWindow):
         self.active_item_data = None
         self.projection_window = None
         self.projection_window_2 = None
+        self.projection_screen_1 = None   # QScreen asignada a ventana 1
+        self.projection_screen_2 = None   # QScreen asignada a ventana 2
+
+        # Timer que verifica si las pantallas asignadas siguen conectadas
+        self._screen_monitor_timer = QTimer()
+        self._screen_monitor_timer.setInterval(2000)  # cada 2 segundos
+        self._screen_monitor_timer.timeout.connect(self._check_screens_connected)
+        self._screen_monitor_timer.start()
         self.external_font_size_offset = 0
 
         self.current_projection_mode = "black"
@@ -1278,7 +1289,10 @@ class MainWindow(QMainWindow):
         esc_shortcut.activated.connect(self.project_black)
 
     def load_styles(self):
-        qss_path = os.path.join(PROJECT_DIR, "styles.qss")
+        if getattr(sys, 'frozen', False):
+            qss_path = os.path.join(sys._MEIPASS, "styles.qss")
+        else:
+            qss_path = os.path.join(PROJECT_DIR, "styles.qss")
         if os.path.exists(qss_path):
             with open(qss_path, "r", encoding="utf-8") as f:
                 self.setStyleSheet(f.read())
@@ -1331,12 +1345,6 @@ class MainWindow(QMainWindow):
             self._on_topbar_bible_search)
         self.topbar_bible_search.textChanged.connect(
             self._on_topbar_bible_search_changed)
-
-        # Debounce timer para el buscador de biblia (evita queries por cada keystroke)
-        self._bible_search_timer = QTimer()
-        self._bible_search_timer.setSingleShot(True)
-        self._bible_search_timer.setInterval(300)  # 300ms de espera
-        self._bible_search_timer.timeout.connect(self._fire_bible_search)
         top_bar_layout.addWidget(self.topbar_bible_search)
 
         window_layout.addWidget(self.top_bar)
@@ -1406,18 +1414,6 @@ class MainWindow(QMainWindow):
         self.btn_restore.setObjectName("subtleCtrlBtn")
         self.btn_restore.clicked.connect(self.project_restore)
         controls_layout.addWidget(self.btn_restore)
-
-        self.btn_toggle_projector = QPushButton("V. Externa")
-        self.btn_toggle_projector.setObjectName("subtleCtrlBtn")
-        self.btn_toggle_projector.clicked.connect(
-            self.toggle_projection_window)
-        controls_layout.addWidget(self.btn_toggle_projector)
-
-        self.btn_toggle_projector_2 = QPushButton("V. Externa 2")
-        self.btn_toggle_projector_2.setObjectName("subtleCtrlBtn")
-        self.btn_toggle_projector_2.clicked.connect(
-            self.toggle_projection_window_2)
-        controls_layout.addWidget(self.btn_toggle_projector_2)
 
         self.btn_lyrics_bg = QPushButton("Fondo Letra")
         self.btn_lyrics_bg.setObjectName("subtleCtrlBtn")
@@ -1517,14 +1513,8 @@ class MainWindow(QMainWindow):
         self.song_search = QLineEdit()
         self.song_search.setObjectName("searchBar")
         self.song_search.setPlaceholderText("🔎 Buscar cantos...")
-        self.song_search.textChanged.connect(self._on_song_search_changed)
+        self.song_search.textChanged.connect(self.filter_songs)
         top_row.addWidget(self.song_search)
-
-        # Debounce timer para cantos
-        self._song_search_timer = QTimer()
-        self._song_search_timer.setSingleShot(True)
-        self._song_search_timer.setInterval(250)
-        self._song_search_timer.timeout.connect(self.filter_songs)
 
         new_song_btn = QPushButton("+ Nuevo Canto")
         new_song_btn.setObjectName("importBtn")
@@ -1788,13 +1778,14 @@ class MainWindow(QMainWindow):
             if child.widget():
                 child.widget().deleteLater()
 
-        conn = get_db()
+        conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT DISTINCT chapter FROM bible WHERE book = ? AND version = ? ORDER BY chapter",
             (book_name, self.bible_current_version)
         )
         chapters = [row[0] for row in cursor.fetchall()]
+        conn.close()
 
         if not chapters:
             empty_lbl = QLabel(
@@ -1898,13 +1889,14 @@ class MainWindow(QMainWindow):
         """Carga todos los versículos de un capítulo en la Preview izquierda.
         También sincroniza el selector de libro y el grid de capítulos visualmente,
         sin importar si la llamada vino de un click manual o del buscador."""
-        conn = get_db()
+        conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT verse, text FROM bible WHERE book = ? AND chapter = ? AND version = ? ORDER BY verse",
             (book_name, chapter_num, self.bible_current_version)
         )
         verses = cursor.fetchall()
+        conn.close()
 
         if not verses:
             QMessageBox.warning(
@@ -2290,7 +2282,8 @@ class MainWindow(QMainWindow):
 
     def load_images_library(self, filter_text=""):
         self.images_list.clear()
-        conn = get_db()
+        conn = sqlite3.connect(database.DB_PATH)
+        conn.create_function("remove_accents", 1, remove_accents)
         cursor = conn.cursor()
 
         if filter_text:
@@ -2332,6 +2325,8 @@ class MainWindow(QMainWindow):
             item.setSizeHint(widget.minimumSizeHint())
             self.images_list.setItemWidget(item, widget)
 
+        conn.close()
+
     def delete_image(self, image_id, name, file_path):
         reply = QMessageBox.question(
             self,
@@ -2343,10 +2338,11 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        conn = get_db()
+        conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM images WHERE id = ?", (image_id,))
         conn.commit()
+        conn.close()
 
         # Borrar el archivo del disco
         if file_path and os.path.exists(file_path):
@@ -2376,7 +2372,7 @@ class MainWindow(QMainWindow):
             if not os.path.exists(imported_dir):
                 os.makedirs(imported_dir)
 
-            conn = get_db()
+            conn = sqlite3.connect(database.DB_PATH)
             cursor = conn.cursor()
 
             imported_count = 0
@@ -2407,6 +2403,7 @@ class MainWindow(QMainWindow):
                         self, "Error de Importación", f"No se pudo copiar {base_name}: {str(e)}")
 
             conn.commit()
+            conn.close()
 
             if imported_count > 0:
                 self.load_images_library()
@@ -2503,7 +2500,8 @@ class MainWindow(QMainWindow):
 
     def load_pptx_library(self, filter_text=""):
         self.pptx_list.clear()
-        conn = get_db()
+        conn = sqlite3.connect(database.DB_PATH)
+        conn.create_function("remove_accents", 1, remove_accents)
         cursor = conn.cursor()
 
         if filter_text:
@@ -2543,6 +2541,8 @@ class MainWindow(QMainWindow):
             item.setSizeHint(widget.minimumSizeHint())
             self.pptx_list.setItemWidget(item, widget)
 
+        conn.close()
+
     def filter_pptx(self):
         self.load_pptx_library(self.pptx_search.text())
 
@@ -2557,13 +2557,14 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        conn = get_db()
+        conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT file_path FROM pptx_files WHERE id = ?", (pptx_id,))
         row = cursor.fetchone()
         cursor.execute("DELETE FROM pptx_files WHERE id = ?", (pptx_id,))
         conn.commit()
+        conn.close()
 
         # Borrar también el archivo original y la carpeta de diapositivas generadas en disco
         if row:
@@ -2603,7 +2604,7 @@ class MainWindow(QMainWindow):
             if not os.path.exists(imported_dir):
                 os.makedirs(imported_dir)
 
-            conn = get_db()
+            conn = sqlite3.connect(database.DB_PATH)
             cursor = conn.cursor()
 
             imported_count = 0
@@ -2656,6 +2657,7 @@ class MainWindow(QMainWindow):
                         self, "Error de Importación", f"No se pudo procesar {base_name}: {str(e)}")
 
             conn.commit()
+            conn.close()
 
             if imported_count > 0:
                 self.load_pptx_library()
@@ -2860,24 +2862,26 @@ class MainWindow(QMainWindow):
 
     def load_songs_library(self, filter_text=""):
         self.songs_list.clear()
-        conn = get_db()
+        conn = sqlite3.connect(database.DB_PATH)
+        # Registrar la función de normalización en la conexión de SQLite
+        conn.create_function("remove_accents", 1, remove_accents)
         cursor = conn.cursor()
 
         if filter_text:
             normalized_search = remove_accents(filter_text)
             cursor.execute(
-                "SELECT id, title, category FROM songs "
-                "WHERE remove_accents(title) LIKE ? "
+                "SELECT id, title, category, lyrics FROM songs "
+                "WHERE remove_accents(title) LIKE ? OR remove_accents(lyrics) LIKE ? "
                 "ORDER BY title",
-                (f"%{normalized_search}%",)
+                (f"%{normalized_search}%", f"%{normalized_search}%")
             )
         else:
             cursor.execute(
-                "SELECT id, title, category FROM songs ORDER BY title")
+                "SELECT id, title, category, lyrics FROM songs ORDER BY title")
 
         rows = cursor.fetchall()
         for row in rows:
-            song_id, title, category = row[0], row[1], row[2]
+            song_id, title, category, lyrics = row
 
             item = QListWidgetItem(self.songs_list)
             item.setData(Qt.ItemDataRole.UserRole, {
@@ -2902,20 +2906,10 @@ class MainWindow(QMainWindow):
             item.setSizeHint(widget.minimumSizeHint())
             self.songs_list.setItemWidget(item, widget)
 
-    def _on_song_search_changed(self, text):
-        """Reinicia el timer de debounce al escribir."""
-        self._song_search_timer.start()
+        conn.close()
 
     def filter_songs(self):
         self.load_songs_library(self.song_search.text())
-
-    def _fire_bible_search(self):
-        """Se llama 300ms después del último keystroke en el buscador de biblia."""
-        query = self.topbar_bible_search.text().strip()
-        if query:
-            self._update_bible_suggestions(query)
-        else:
-            self._bible_show_chapters()
 
     def open_new_song_dialog(self, song_id=None):
         dialog = SongEditorDialog(parent=self, song_id=song_id)
@@ -2931,10 +2925,11 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Cancel
         )
         if reply == QMessageBox.StandardButton.Yes:
-            conn = get_db()
+            conn = sqlite3.connect(database.DB_PATH)
             cursor = conn.cursor()
             cursor.execute("DELETE FROM songs WHERE id = ?", (song_id,))
             conn.commit()
+            conn.close()
             self.preview_list.clear()
             self.load_songs_library(self.song_search.text())
 
@@ -2974,12 +2969,13 @@ class MainWindow(QMainWindow):
         self._update_bible_suggestions(query)
 
     def _on_topbar_bible_search_changed(self, text):
-        """Se llama en tiempo real conforme escribe — dispara debounce."""
-        if not text.strip():
-            self._bible_search_timer.stop()
+        """Se llama en tiempo real conforme escribe — muestra sugerencias."""
+        query = text.strip()
+        if not query:
+            # Sin texto → volver al modo capítulos
             self._bible_show_chapters()
             return
-        self._bible_search_timer.start()  # reinicia el timer en cada keystroke
+        self._update_bible_suggestions(query)
 
     def _update_bible_suggestions(self, query):
         """Genera sugerencias de libros, capítulos o versículos según lo escrito."""
@@ -3148,11 +3144,12 @@ class MainWindow(QMainWindow):
     # =========================================================================
 
     def load_song_to_preview_by_id(self, song_id):
-        conn = get_db()
+        conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT title, lyrics, category FROM songs WHERE id = ?", (song_id,))
         res = cursor.fetchone()
+        conn.close()
 
         if not res:
             return
@@ -3328,10 +3325,12 @@ class MainWindow(QMainWindow):
 
         if self.projection_window_2.isVisible():
             self.projection_window_2.hide()
-            self.btn_toggle_projector_2.setText("V. Externa 2")
+            if hasattr(self, "btn_toggle_projector_2") and self.btn_toggle_projector_2:
+                self.btn_toggle_projector_2.setText("V. Externa 2")
         else:
             self.projection_window_2.show()
-            self.btn_toggle_projector_2.setText("Ocultar V. Ext 2")
+            if hasattr(self, "btn_toggle_projector_2") and self.btn_toggle_projector_2:
+                self.btn_toggle_projector_2.setText("Ocultar V. Ext 2")
 
             # Sincronizar estado actual
             self.projection_window_2.projection_widget.is_black_screen = \
@@ -3352,7 +3351,171 @@ class MainWindow(QMainWindow):
                 self.projection_window_2.projection_widget.set_black_screen()
 
     def on_projection_window_2_closed(self):
-        self.btn_toggle_projector_2.setText("V. Externa 2")
+        if hasattr(self, "btn_toggle_projector_2") and self.btn_toggle_projector_2:
+            self.btn_toggle_projector_2.setText("V. Externa 2 ▾")
+            self.btn_toggle_projector_2.setStyleSheet("")
+        self.projection_screen_2 = None
+
+    def show_screen_menu(self, target=None, window_num=1):
+        """Muestra un menú con las pantallas disponibles para seleccionar."""
+        screens = QApplication.screens()
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #18181b;
+                color: #f4f4f5;
+                border: 1px solid #3f3f46;
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 8px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #3f3f46;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #3f3f46;
+                margin: 4px 8px;
+            }
+        """)
+
+        # Opción para cerrar si ya está abierta
+        win = self.projection_window if window_num == 1 else self.projection_window_2
+        if win and win.isVisible():
+            close_action = menu.addAction("✕  Cerrar proyección")
+            close_action.triggered.connect(
+                lambda: self.close_projection_window(window_num))
+            menu.addSeparator()
+
+        # Una acción por cada pantalla disponible
+        for i, screen in enumerate(screens):
+            geo = screen.geometry()
+            label = f"🖥  Proyectar en Pantalla {i + 1}  —  {geo.width()}×{geo.height()}"
+            if screen == QApplication.primaryScreen():
+                label += "  (principal)"
+            if window_num == 1 and self.projection_screen_1 == screen and self.projection_window and self.projection_window.isVisible():
+                label = f"● Pantalla {i + 1}  —  {geo.width()}×{geo.height()}  [Activa]"
+            action = menu.addAction(label)
+            action.triggered.connect(
+                lambda checked, s=screen, n=window_num: self.send_to_screen(s, n))
+
+        if isinstance(target, QPoint):
+            menu.exec(target)
+        elif isinstance(target, QWidget):
+            menu.exec(target.mapToGlobal(target.rect().center()))
+        else:
+            from PyQt6.QtGui import QCursor
+            menu.exec(QCursor.pos())
+
+    def send_to_screen(self, screen, window_num=1):
+        """Abre o mueve la ventana externa a la pantalla indicada en fullscreen."""
+        if window_num == 1:
+            if not self.projection_window:
+                self.projection_window = ProjectionWindow(
+                    close_callback=self.on_projection_window_closed)
+                self.projection_window._main_window_ref = self
+                self.projection_window.projection_widget.general_bg_pixmap = \
+                    self.local_projection_widget.general_bg_pixmap
+                self.projection_window.projection_widget.font_size_offset = \
+                    self.external_font_size_offset
+
+            win = self.projection_window
+            self.projection_screen_1 = screen
+            btn = getattr(self, "btn_toggle_projector", None)
+        else:
+            if not self.projection_window_2:
+                self.projection_window_2 = ProjectionWindow(
+                    close_callback=self.on_projection_window_2_closed)
+                self.projection_window_2._main_window_ref = self
+                self.projection_window_2.projection_widget.general_bg_pixmap = \
+                    self.local_projection_widget.general_bg_pixmap
+                self.projection_window_2.projection_widget.font_size_offset = \
+                    self.external_font_size_offset
+
+            win = self.projection_window_2
+            self.projection_screen_2 = screen
+            btn = getattr(self, "btn_toggle_projector_2", None)
+
+        # Mover a la pantalla y poner en fullscreen
+        geo = screen.geometry()
+        win.setGeometry(geo)
+        win.showFullScreen()
+        win.windowHandle().setScreen(screen)
+        win.setGeometry(geo)
+
+        if btn:
+            geo_str = f"{geo.width()}×{geo.height()}"
+            btn.setText(f"● P{QApplication.screens().index(screen) + 1} {geo_str} ▾")
+            btn.setStyleSheet(btn.styleSheet() + "color: #4ade80;")
+
+        self.adjust_obs_container_size(is_external_visible=True)
+
+        # Sincronizar contenido actual
+        self._sync_projection_window(win)
+
+    def close_projection_window(self, window_num=1):
+        """Cierra la ventana externa del número indicado."""
+        if window_num == 1:
+            if self.projection_window:
+                self.projection_window.close()
+            self.projection_screen_1 = None
+        else:
+            if self.projection_window_2:
+                self.projection_window_2.close()
+            self.projection_screen_2 = None
+
+    def _sync_projection_window(self, win):
+        """Sincroniza el contenido actual de proyección a una ventana externa."""
+        win.projection_widget.is_black_screen = \
+            self.local_projection_widget.is_black_screen
+        if self.current_projection_mode == "text":
+            win.projection_widget.display_text(
+                self.last_projected_text,
+                self.last_projected_header,
+                self.last_projected_song_title
+            )
+        elif self.current_projection_mode == "image":
+            win.projection_widget.display_image(
+                self.last_projected_image_path,
+                self.last_projected_header,
+                self.last_projected_song_title
+            )
+        elif self.current_projection_mode == "black":
+            win.projection_widget.set_black_screen()
+
+    def _check_screens_connected(self):
+        """Verifica cada 2s si las pantallas asignadas siguen conectadas.
+        Si una se desconectó, cierra automáticamente esa ventana externa."""
+        available = QApplication.screens()
+
+        if (self.projection_screen_1 and
+                self.projection_screen_1 not in available and
+                self.projection_window and
+                self.projection_window.isVisible()):
+            self.projection_window.close()
+            self.projection_screen_1 = None
+            if hasattr(self, "btn_toggle_projector") and self.btn_toggle_projector:
+                self.btn_toggle_projector.setText("V. Externa ▾")
+                self.btn_toggle_projector.setStyleSheet("")
+            QMessageBox.warning(
+                self, "Pantalla desconectada",
+                "La pantalla asignada a V. Externa fue desconectada.\nLa proyección fue cerrada automáticamente.")
+
+        if (self.projection_screen_2 and
+                self.projection_screen_2 not in available and
+                self.projection_window_2 and
+                self.projection_window_2.isVisible()):
+            self.projection_window_2.close()
+            self.projection_screen_2 = None
+            if hasattr(self, "btn_toggle_projector_2") and self.btn_toggle_projector_2:
+                self.btn_toggle_projector_2.setText("V. Externa 2 ▾")
+                self.btn_toggle_projector_2.setStyleSheet("")
+            QMessageBox.warning(
+                self, "Pantalla desconectada",
+                "La pantalla asignada a V. Externa 2 fue desconectada.\nLa proyección fue cerrada automáticamente.")
 
     def toggle_projection_window(self):
         if not self.projection_window:
@@ -3365,11 +3528,13 @@ class MainWindow(QMainWindow):
 
         if self.projection_window.isVisible():
             self.projection_window.hide()
-            self.btn_toggle_projector.setText("V. Externa")
+            if hasattr(self, "btn_toggle_projector") and self.btn_toggle_projector:
+                self.btn_toggle_projector.setText("V. Externa")
             self.adjust_obs_container_size(is_external_visible=False)
         else:
             self.projection_window.show()
-            self.btn_toggle_projector.setText("Ocultar V. Ext")
+            if hasattr(self, "btn_toggle_projector") and self.btn_toggle_projector:
+                self.btn_toggle_projector.setText("Ocultar V. Ext")
             self.adjust_obs_container_size(is_external_visible=True)
 
             # Sincronizar
@@ -3391,7 +3556,10 @@ class MainWindow(QMainWindow):
                 self.projection_window.projection_widget.set_black_screen()
 
     def on_projection_window_closed(self):
-        self.btn_toggle_projector.setText("V. Externa")
+        if hasattr(self, "btn_toggle_projector") and self.btn_toggle_projector:
+            self.btn_toggle_projector.setText("V. Externa ▾")
+            self.btn_toggle_projector.setStyleSheet("")
+        self.projection_screen_1 = None
         self.adjust_obs_container_size(is_external_visible=False)
 
     def adjust_obs_container_size(self, is_external_visible):
@@ -3489,3 +3657,4 @@ if __name__ == "__main__":
     window.setMinimumSize(1024, 600)
     window.showMaximized()
     sys.exit(app.exec())
+    
