@@ -31,6 +31,31 @@ database.DB_PATH = DB_PATH  # override para que todo el código use el path corr
 database.init_db()
 
 
+def init_project_resources():
+    """Asegura que las carpetas y recursos base existan en PROJECT_DIR."""
+    for folder_name in ["imported_images", "imported_pptx"]:
+        target_dir = os.path.join(PROJECT_DIR, folder_name)
+        os.makedirs(target_dir, exist_ok=True)
+        # Si estamos en modo empaquetado, copiar recursos predeterminados de _MEIPASS
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            source_dir = os.path.join(sys._MEIPASS, folder_name)
+            if os.path.exists(source_dir):
+                for item in os.listdir(source_dir):
+                    s = os.path.join(source_dir, item)
+                    d = os.path.join(target_dir, item)
+                    if not os.path.exists(d):
+                        try:
+                            if os.path.isdir(s):
+                                shutil.copytree(s, d)
+                            else:
+                                shutil.copy2(s, d)
+                        except Exception as e:
+                            print(f"Error copiando recurso empaquetado {item}: {e}")
+
+
+init_project_resources()
+
+
 def remove_accents(text):
     """
     Normaliza el texto y elimina las tildes/acentos en español (á -> a, ü -> u, etc.)
@@ -148,14 +173,15 @@ class PreviewImageCardWidget(QFrame):
             """)
 
 
-class LibraryImageRowWidget(QWidget):
+class LibraryImageRowWidget(QFrame):
     """Fila de imagen para la biblioteca. Clickeable directamente."""
 
     def __init__(self, title, file_path, on_add_clicked, on_delete_clicked, parent=None):
         super().__init__(parent)
+        self.setObjectName("libraryImageRow")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(15, 10, 15, 10)
+        layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(12)
 
         # Miniatura de la imagen
@@ -164,6 +190,7 @@ class LibraryImageRowWidget(QWidget):
         self.thumb_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumb_lbl.setStyleSheet("""
             background-color: #1a1a1e; 
+            border: 1px solid #27272a;
             border-radius: 4px;
         """)
 
@@ -215,7 +242,7 @@ class LibraryImageRowWidget(QWidget):
             QPushButton:hover {
                 background-color: #7f1d1d;
                 color: #fca5a5;
-                border-color: #7f1d1d;
+                border-color: #991b1b;
             }
         """)
         self.del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -229,15 +256,78 @@ class LibraryImageRowWidget(QWidget):
         self.add_btn.clicked.connect(on_add_clicked)
         layout.addWidget(self.add_btn)
 
+        self.set_in_guion(False)
 
-class LibraryPptxRowWidget(QWidget):
+    def set_in_guion(self, in_guion):
+        self.is_in_guion = in_guion
+        if in_guion:
+            self.setStyleSheet("""
+                QFrame#libraryImageRow {
+                    background-color: rgba(99, 102, 241, 0.12);
+                    border: 1.5px solid #6366f1;
+                    border-radius: 8px;
+                }
+                QFrame#libraryImageRow:hover {
+                    background-color: rgba(99, 102, 241, 0.20);
+                    border: 1.5px solid #818cf8;
+                }
+            """)
+            self.add_btn.setText("✓ En Guión")
+            self.add_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1e1b4b;
+                    color: #a5b4fc;
+                    border: 1px solid #6366f1;
+                    border-radius: 14px;
+                    padding: 6px 14px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #312e81;
+                    color: #ffffff;
+                    border: 1px solid #818cf8;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QFrame#libraryImageRow {
+                    background-color: transparent;
+                    border: 1px solid transparent;
+                    border-radius: 8px;
+                }
+                QFrame#libraryImageRow:hover {
+                    background-color: #27272a;
+                    border: 1px solid #3f3f46;
+                }
+            """)
+            self.add_btn.setText("+ Guión")
+            self.add_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2563eb;
+                    color: #ffffff;
+                    border: 1px solid #3b82f6;
+                    border-radius: 14px;
+                    padding: 6px 14px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #1d4ed8;
+                    border: 1px solid #60a5fa;
+                }
+            """)
+
+
+class LibraryPptxRowWidget(QFrame):
     """Fila de presentación (PPTX o PDF) para la biblioteca. Clickeable directamente."""
 
     def __init__(self, title, on_add_clicked, on_delete_clicked, file_type="pptx", parent=None):
         super().__init__(parent)
+        self.setObjectName("libraryPptxRow")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(15, 10, 15, 10)
+        layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(12)
 
         is_pdf = file_type == "pdf"
@@ -250,6 +340,7 @@ class LibraryPptxRowWidget(QWidget):
             self.icon_lbl.setStyleSheet("""
                 background-color: #7f1d1d; 
                 color: #fca5a5; 
+                border: 1px solid #991b1b;
                 border-radius: 18px; 
                 font-size: 10px;
                 font-weight: bold;
@@ -258,6 +349,7 @@ class LibraryPptxRowWidget(QWidget):
             self.icon_lbl.setStyleSheet("""
                 background-color: #7c2d12; 
                 color: #ff7a59; 
+                border: 1px solid #9a3412;
                 border-radius: 18px; 
                 font-size: 15px;
                 font-weight: bold;
@@ -305,7 +397,7 @@ class LibraryPptxRowWidget(QWidget):
             QPushButton:hover {
                 background-color: #7f1d1d;
                 color: #fca5a5;
-                border-color: #7f1d1d;
+                border-color: #991b1b;
             }
         """)
         self.del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -318,6 +410,68 @@ class LibraryPptxRowWidget(QWidget):
         self.add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_btn.clicked.connect(on_add_clicked)
         layout.addWidget(self.add_btn)
+
+        self.set_in_guion(False)
+
+    def set_in_guion(self, in_guion):
+        self.is_in_guion = in_guion
+        if in_guion:
+            self.setStyleSheet("""
+                QFrame#libraryPptxRow {
+                    background-color: rgba(99, 102, 241, 0.12);
+                    border: 1.5px solid #6366f1;
+                    border-radius: 8px;
+                }
+                QFrame#libraryPptxRow:hover {
+                    background-color: rgba(99, 102, 241, 0.20);
+                    border: 1.5px solid #818cf8;
+                }
+            """)
+            self.add_btn.setText("✓ En Guión")
+            self.add_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1e1b4b;
+                    color: #a5b4fc;
+                    border: 1px solid #6366f1;
+                    border-radius: 14px;
+                    padding: 6px 14px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #312e81;
+                    color: #ffffff;
+                    border: 1px solid #818cf8;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QFrame#libraryPptxRow {
+                    background-color: transparent;
+                    border: 1px solid transparent;
+                    border-radius: 8px;
+                }
+                QFrame#libraryPptxRow:hover {
+                    background-color: #27272a;
+                    border: 1px solid #3f3f46;
+                }
+            """)
+            self.add_btn.setText("+ Guión")
+            self.add_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2563eb;
+                    color: #ffffff;
+                    border: 1px solid #3b82f6;
+                    border-radius: 14px;
+                    padding: 6px 14px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #1d4ed8;
+                    border: 1px solid #60a5fa;
+                }
+            """)
 
 
 class PreviewCardWidget(QFrame):
@@ -389,14 +543,15 @@ class PreviewCardWidget(QFrame):
             """)
 
 
-class LibrarySongRowWidget(QWidget):
+class LibrarySongRowWidget(QFrame):
     """Fila de canto para la biblioteca. Sin botón Proyectar. Clickeable directamente."""
 
     def __init__(self, title, category, on_add_clicked, on_edit_clicked, on_delete_clicked, parent=None):
         super().__init__(parent)
+        self.setObjectName("librarySongRow")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(15, 10, 15, 10)
+        layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(12)
 
         # Icono circular de música
@@ -406,6 +561,7 @@ class LibrarySongRowWidget(QWidget):
         self.icon_lbl.setStyleSheet("""
             background-color: #1e1b4b; 
             color: #818cf8; 
+            border: 1px solid #3730a3;
             border-radius: 18px; 
             font-size: 15px;
             font-weight: bold;
@@ -452,6 +608,7 @@ class LibrarySongRowWidget(QWidget):
             QPushButton:hover {
                 background-color: #3f3f46;
                 color: #fafafa;
+                border-color: #52525b;
             }
         """)
         self.edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -473,7 +630,7 @@ class LibrarySongRowWidget(QWidget):
             QPushButton:hover {
                 background-color: #7f1d1d;
                 color: #fca5a5;
-                border-color: #7f1d1d;
+                border-color: #991b1b;
             }
         """)
         self.del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -486,6 +643,68 @@ class LibrarySongRowWidget(QWidget):
         self.add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_btn.clicked.connect(on_add_clicked)
         layout.addWidget(self.add_btn)
+
+        self.set_in_guion(False)
+
+    def set_in_guion(self, in_guion):
+        self.is_in_guion = in_guion
+        if in_guion:
+            self.setStyleSheet("""
+                QFrame#librarySongRow {
+                    background-color: rgba(99, 102, 241, 0.12);
+                    border: 1.5px solid #6366f1;
+                    border-radius: 8px;
+                }
+                QFrame#librarySongRow:hover {
+                    background-color: rgba(99, 102, 241, 0.20);
+                    border: 1.5px solid #818cf8;
+                }
+            """)
+            self.add_btn.setText("✓ En Guión")
+            self.add_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1e1b4b;
+                    color: #a5b4fc;
+                    border: 1px solid #6366f1;
+                    border-radius: 14px;
+                    padding: 6px 14px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #312e81;
+                    color: #ffffff;
+                    border: 1px solid #818cf8;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QFrame#librarySongRow {
+                    background-color: transparent;
+                    border: 1px solid transparent;
+                    border-radius: 8px;
+                }
+                QFrame#librarySongRow:hover {
+                    background-color: #27272a;
+                    border: 1px solid #3f3f46;
+                }
+            """)
+            self.add_btn.setText("+ Guión")
+            self.add_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2563eb;
+                    color: #ffffff;
+                    border: 1px solid #3b82f6;
+                    border-radius: 14px;
+                    padding: 6px 14px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #1d4ed8;
+                    border: 1px solid #60a5fa;
+                }
+            """)
 
 
 class CleanProjectionWidget(QFrame):
@@ -549,7 +768,7 @@ class CleanProjectionWidget(QFrame):
             self.help_btn.hide()
         else:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.setToolTip("Haz clic izquierdo para seleccionar la pantalla de proyección")
+            self.setToolTip("Haz clic derecho para seleccionar la pantalla de proyección")
             self.text_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             self.obs_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             self.footer_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -716,7 +935,7 @@ class CleanProjectionWidget(QFrame):
         super().paintEvent(event)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and not getattr(self, "is_external", False):
+        if event.button() == Qt.MouseButton.RightButton and not getattr(self, "is_external", False):
             main_win = self.window()
             if hasattr(main_win, "show_screen_menu"):
                 main_win.show_screen_menu(self, event.globalPosition().toPoint())
@@ -856,7 +1075,7 @@ class SectionBlockWidget(QFrame):
             QPushButton {
                 background-color: #3f3f46;
                 color: #a1a1aa;
-                border: none;
+                border: 1px solid #52525b;
                 border-radius: 12px;
                 font-size: 11px;
                 font-weight: bold;
@@ -864,6 +1083,7 @@ class SectionBlockWidget(QFrame):
             QPushButton:hover {
                 background-color: #7f1d1d;
                 color: #fca5a5;
+                border-color: #991b1b;
             }
         """)
         del_btn.clicked.connect(self._delete_self)
@@ -1115,13 +1335,16 @@ class SongEditorDialog(QDialog):
             QPushButton {
                 background-color: #4f46e5;
                 color: #ffffff;
-                border: none;
+                border: 1px solid #6366f1;
                 border-radius: 8px;
                 padding: 10px 24px;
                 font-weight: bold;
                 font-size: 13px;
             }
-            QPushButton:hover { background-color: #6366f1; }
+            QPushButton:hover {
+                background-color: #6366f1;
+                border: 1px solid #818cf8;
+            }
         """)
         save_btn.clicked.connect(self.save_song)
         bottom_row.addWidget(save_btn)
@@ -1289,13 +1512,28 @@ class MainWindow(QMainWindow):
         esc_shortcut.activated.connect(self.project_black)
 
     def load_styles(self):
-        if getattr(sys, 'frozen', False):
-            qss_path = os.path.join(sys._MEIPASS, "styles.qss")
-        else:
-            qss_path = os.path.join(PROJECT_DIR, "styles.qss")
-        if os.path.exists(qss_path):
-            with open(qss_path, "r", encoding="utf-8") as f:
-                self.setStyleSheet(f.read())
+        candidates = []
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            candidates.append(os.path.join(sys._MEIPASS, "styles.qss"))
+        candidates.append(os.path.join(PROJECT_DIR, "styles.qss"))
+        candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "styles.qss"))
+
+        qss_content = ""
+        for qss_path in candidates:
+            if os.path.exists(qss_path):
+                try:
+                    with open(qss_path, "r", encoding="utf-8") as f:
+                        qss_content = f.read()
+                    if qss_content:
+                        break
+                except Exception as e:
+                    print(f"Error cargando stylesheet desde {qss_path}: {e}")
+
+        if qss_content:
+            self.setStyleSheet(qss_content)
+            app_inst = QApplication.instance()
+            if app_inst:
+                app_inst.setStyleSheet(qss_content)
 
     def setup_ui(self):
         main_widget = QWidget()
@@ -1421,6 +1659,37 @@ class MainWindow(QMainWindow):
         controls_layout.addWidget(self.btn_lyrics_bg)
 
         preview_layout.addLayout(controls_layout)
+
+        # Accesos rápidos de imágenes (Bienvenida / Despedida)
+        quick_controls_layout = QHBoxLayout()
+        quick_controls_layout.setSpacing(6)
+
+        lbl_quick_title = QLabel("Acceso Rápido:")
+        lbl_quick_title.setStyleSheet("color: #a1a1aa; font-weight: bold; font-size: 11px; background: transparent;")
+        quick_controls_layout.addWidget(lbl_quick_title)
+        quick_controls_layout.addStretch()
+
+        self.btn_quick_bienvenida = QPushButton("Bienvenida")
+        self.btn_quick_bienvenida.setObjectName("subtleCtrlBtn")
+        self.btn_quick_bienvenida.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_quick_bienvenida.setToolTip("Clic: Proyectar Bienvenida\nClic derecho: Cambiar / Configurar imagen")
+        self.btn_quick_bienvenida.clicked.connect(lambda: self.project_quick_image("bienvenida", "Bienvenida"))
+        self.btn_quick_bienvenida.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.btn_quick_bienvenida.customContextMenuRequested.connect(
+            lambda pos: self.show_quick_image_menu("bienvenida", "Bienvenida", self.btn_quick_bienvenida.mapToGlobal(pos)))
+        quick_controls_layout.addWidget(self.btn_quick_bienvenida)
+
+        self.btn_quick_despedida = QPushButton("Despedida")
+        self.btn_quick_despedida.setObjectName("subtleCtrlBtn")
+        self.btn_quick_despedida.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_quick_despedida.setToolTip("Clic: Proyectar Despedida\nClic derecho: Cambiar / Configurar imagen")
+        self.btn_quick_despedida.clicked.connect(lambda: self.project_quick_image("despedida", "Despedida"))
+        self.btn_quick_despedida.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.btn_quick_despedida.customContextMenuRequested.connect(
+            lambda pos: self.show_quick_image_menu("despedida", "Despedida", self.btn_quick_despedida.mapToGlobal(pos)))
+        quick_controls_layout.addWidget(self.btn_quick_despedida)
+
+        preview_layout.addLayout(quick_controls_layout)
 
         # Controles de tamaño de fuente
         font_controls_layout = QHBoxLayout()
@@ -1844,6 +2113,7 @@ class MainWindow(QMainWindow):
             "text": text, "title": title
         })
         self.refresh_guion_list()
+        self._update_guion_buttons()
 
     def on_bible_search_enter(self):
         """Detecta si el texto es una cita válida ('Juan 3 16' o 'Juan 3:16') y navega directo."""
@@ -1936,10 +2206,17 @@ class MainWindow(QMainWindow):
             })
 
             # Contenedor: tarjeta + botón "+ Guión" a la derecha
-            wrapper = QWidget()
-            wrapper.setStyleSheet("background: transparent;")
+            wrapper = QFrame()
+            wrapper.setObjectName("biblePreviewRow")
+            wrapper.setStyleSheet("""
+                QFrame#biblePreviewRow {
+                    background: transparent;
+                    border: 1.5px solid transparent;
+                    border-radius: 8px;
+                }
+            """)
             h = QHBoxLayout(wrapper)
-            h.setContentsMargins(0, 0, 0, 0)
+            h.setContentsMargins(4, 2, 4, 2)
             h.setSpacing(6)
 
             card_widget = PreviewCardWidget(header=header, lyrics=verse_text)
@@ -1949,19 +2226,92 @@ class MainWindow(QMainWindow):
 
             guion_btn = QPushButton("+ Guión")
             guion_btn.setObjectName("addToGuionBtn")
-            guion_btn.setFixedWidth(70)
+            guion_btn.setFixedWidth(82)
             guion_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            guion_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2563eb;
+                    color: #ffffff;
+                    border: 1px solid #3b82f6;
+                    border-radius: 14px;
+                    padding: 6px 12px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #1d4ed8;
+                    border: 1px solid #60a5fa;
+                }
+            """)
             guion_btn.clicked.connect(
                 lambda _, b=book_name, c=chapter_num, v=verse_num, t=verse_text:
                 self.add_bible_to_guion(b, c, v, t)
             )
             h.addWidget(guion_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
+            def make_set_in_guion(w=wrapper, g=guion_btn):
+                def set_in_guion(in_guion):
+                    if in_guion:
+                        w.setStyleSheet("""
+                            QFrame#biblePreviewRow {
+                                background-color: rgba(99, 102, 241, 0.12);
+                                border: 1.5px solid #6366f1;
+                                border-radius: 8px;
+                            }
+                        """)
+                        g.setText("✓ En Guión")
+                        g.setStyleSheet("""
+                            QPushButton {
+                                background-color: #1e1b4b;
+                                color: #a5b4fc;
+                                border: 1px solid #6366f1;
+                                border-radius: 14px;
+                                padding: 6px 12px;
+                                font-size: 11px;
+                                font-weight: bold;
+                            }
+                            QPushButton:hover {
+                                background-color: #312e81;
+                                color: #ffffff;
+                                border: 1px solid #818cf8;
+                            }
+                        """)
+                    else:
+                        w.setStyleSheet("""
+                            QFrame#biblePreviewRow {
+                                background: transparent;
+                                border: 1.5px solid transparent;
+                                border-radius: 8px;
+                            }
+                        """)
+                        g.setText("+ Guión")
+                        g.setStyleSheet("""
+                            QPushButton {
+                                background-color: #2563eb;
+                                color: #ffffff;
+                                border: 1px solid #3b82f6;
+                                border-radius: 14px;
+                                padding: 6px 12px;
+                                font-size: 11px;
+                                font-weight: bold;
+                            }
+                            QPushButton:hover {
+                                background-color: #1d4ed8;
+                                border: 1px solid #60a5fa;
+                            }
+                        """)
+                return set_in_guion
+
+            wrapper.set_in_guion = make_set_in_guion()
+
             list_item.setSizeHint(wrapper.minimumSizeHint())
             self.preview_list.setItemWidget(list_item, wrapper)
 
             if focus_verse and verse_num == focus_verse:
                 focus_item = list_item
+
+        # Actualizar estado de botones/sombreado de versículos en Guión
+        self._update_guion_buttons()
 
         # Seleccionar y proyectar: el versículo buscado, o el primero por defecto
         target_item = focus_item if focus_item else self.preview_list.item(0)
@@ -2123,12 +2473,16 @@ class MainWindow(QMainWindow):
             QPushButton {
                 background-color: rgba(255,255,255,0.07);
                 color: #a1a1aa;
-                border: none;
+                border: 1px solid #3f3f46;
                 border-radius: 13px;
                 font-size: 11px;
                 font-weight: bold;
             }
-            QPushButton:hover { background-color: #7f1d1d; color: #fca5a5; }
+            QPushButton:hover {
+                background-color: #7f1d1d;
+                color: #fca5a5;
+                border-color: #991b1b;
+            }
         """)
         del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         del_btn.clicked.connect(
@@ -2172,35 +2526,64 @@ class MainWindow(QMainWindow):
         self._update_guion_buttons()
 
     def _update_guion_buttons(self):
-        """Actualiza el estado visual de los botones + Guión en todas las pestañas."""
-        # Para cantos
-        for i in range(self.songs_list.count()):
-            item = self.songs_list.item(i)
-            widget = self.songs_list.itemWidget(item)
-            if widget:
-                data = item.data(Qt.ItemDataRole.UserRole)
-                if data:
-                    in_guion = any(s["id"] == data["id"]
-                                   for s in self.guion["songs"])
-                    if in_guion:
-                        widget.add_btn.setText("✓ En Guión")
-                        widget.add_btn.setStyleSheet("""
-                            QPushButton {
-                                background-color: #052e16;
-                                color: #4ade80;
-                                border: 1px solid #16a34a;
-                                border-radius: 14px;
-                                padding: 6px 14px;
-                                font-size: 11px;
-                                font-weight: bold;
-                            }
-                        """)
-                    else:
-                        widget.add_btn.setText("+ Guión")
-                        widget.add_btn.setObjectName("addToGuionBtn")
-                        widget.add_btn.setStyleSheet("")
-                        widget.add_btn.style().unpolish(widget.add_btn)
-                        widget.add_btn.style().polish(widget.add_btn)
+        """Actualiza el estado visual y bordes/sombreado de los ítems en Guión en todas las pestañas."""
+        # 1. Cantos
+        if hasattr(self, "songs_list"):
+            for i in range(self.songs_list.count()):
+                item = self.songs_list.item(i)
+                widget = self.songs_list.itemWidget(item)
+                if widget and hasattr(widget, "set_in_guion"):
+                    data = item.data(Qt.ItemDataRole.UserRole)
+                    if data:
+                        in_guion = any(s.get("id") == data.get("id") for s in self.guion.get("songs", []))
+                        widget.set_in_guion(in_guion)
+
+        # 2. Imágenes
+        if hasattr(self, "images_list"):
+            for i in range(self.images_list.count()):
+                item = self.images_list.item(i)
+                widget = self.images_list.itemWidget(item)
+                if widget and hasattr(widget, "set_in_guion"):
+                    data = item.data(Qt.ItemDataRole.UserRole)
+                    if data:
+                        in_guion = any(
+                            (img.get("id") is not None and img.get("id") == data.get("id")) or
+                            (img.get("name") and img.get("name") == data.get("name"))
+                            for img in self.guion.get("images", [])
+                        )
+                        widget.set_in_guion(in_guion)
+
+        # 3. PPTX / PDF
+        if hasattr(self, "pptx_list"):
+            for i in range(self.pptx_list.count()):
+                item = self.pptx_list.item(i)
+                widget = self.pptx_list.itemWidget(item)
+                if widget and hasattr(widget, "set_in_guion"):
+                    data = item.data(Qt.ItemDataRole.UserRole)
+                    if data:
+                        in_guion = any(
+                            (p.get("id") is not None and p.get("id") == data.get("id")) or
+                            (p.get("name") and p.get("name") == data.get("name"))
+                            for p in self.guion.get("pptx", [])
+                        )
+                        widget.set_in_guion(in_guion)
+
+        # 4. Versículos de la Biblia en la lista de previsualización
+        if hasattr(self, "preview_list") and hasattr(self, "bible_current_book") and self.bible_current_book:
+            for i in range(self.preview_list.count()):
+                item = self.preview_list.item(i)
+                widget = self.preview_list.itemWidget(item)
+                if widget and hasattr(widget, "set_in_guion"):
+                    data = item.data(Qt.ItemDataRole.UserRole)
+                    if data and "bible_verse" in data:
+                        v = data["bible_verse"]
+                        b = self.bible_current_book
+                        c = self.bible_current_chapter
+                        in_guion = any(
+                            bv.get("book") == b and bv.get("chapter") == c and bv.get("verse") == v
+                            for bv in self.guion.get("bible", [])
+                        )
+                        widget.set_in_guion(in_guion)
 
     def on_guion_item_clicked(self, list_item):
         """Click simple → carga en preview."""
@@ -2305,6 +2688,14 @@ class MainWindow(QMainWindow):
             abs_path = file_path
             if not os.path.isabs(file_path):
                 abs_path = os.path.join(PROJECT_DIR, file_path)
+            elif not os.path.exists(abs_path):
+                base_name = os.path.basename(file_path)
+                candidate1 = os.path.join(PROJECT_DIR, "imported_images", base_name)
+                candidate2 = os.path.join(PROJECT_DIR, base_name)
+                if os.path.exists(candidate1):
+                    abs_path = candidate1
+                elif os.path.exists(candidate2):
+                    abs_path = candidate2
 
             item = QListWidgetItem(self.images_list)
             item.setData(Qt.ItemDataRole.UserRole, {
@@ -2326,6 +2717,7 @@ class MainWindow(QMainWindow):
             self.images_list.setItemWidget(item, widget)
 
         conn.close()
+        self._update_guion_buttons()
 
     def delete_image(self, image_id, name, file_path):
         reply = QMessageBox.question(
@@ -2461,6 +2853,7 @@ class MainWindow(QMainWindow):
         self.guion["images"].append(
             {"id": image_id, "name": name, "file_path": file_path})
         self.refresh_guion_list()
+        self._update_guion_buttons()
 
     def setup_pptx_page(self):
         container = QFrame()
@@ -2542,6 +2935,7 @@ class MainWindow(QMainWindow):
             self.pptx_list.setItemWidget(item, widget)
 
         conn.close()
+        self._update_guion_buttons()
 
     def filter_pptx(self):
         self.load_pptx_library(self.pptx_search.text())
@@ -2746,6 +3140,7 @@ class MainWindow(QMainWindow):
             return
         self.guion["pptx"].append({"id": pptx_id, "name": name})
         self.refresh_guion_list()
+        self._update_guion_buttons()
 
     def change_lyrics_background(self):
         # Preguntar si desea cambiar o quitar el fondo
@@ -2840,21 +3235,246 @@ class MainWindow(QMainWindow):
 
     def load_persisted_lyrics_bg(self):
         bg_config_path = os.path.join(PROJECT_DIR, "lyrics_bg_path.txt")
+        if not os.path.exists(bg_config_path):
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                meipass_bg = os.path.join(sys._MEIPASS, "lyrics_bg_path.txt")
+                if os.path.exists(meipass_bg):
+                    bg_config_path = meipass_bg
+
         if os.path.exists(bg_config_path):
             try:
                 with open(bg_config_path, "r", encoding="utf-8") as f:
                     path = f.read().strip()
-                if path and os.path.exists(path):
-                    pixmap = QPixmap(path)
-                    if not pixmap.isNull():
-                        self.local_projection_widget.general_bg_pixmap = pixmap
-                        if self.projection_window:
-                            self.projection_window.projection_widget.general_bg_pixmap = pixmap
-                        if self.projection_window_2:
-                            self.projection_window_2.projection_widget.general_bg_pixmap = pixmap
-                        self.local_projection_widget.update()
+                if path:
+                    if not os.path.exists(path):
+                        base = os.path.basename(path)
+                        candidate1 = os.path.join(PROJECT_DIR, "imported_images", base)
+                        candidate2 = os.path.join(PROJECT_DIR, base)
+                        if os.path.exists(candidate1):
+                            path = candidate1
+                        elif os.path.exists(candidate2):
+                            path = candidate2
+
+                    if os.path.exists(path):
+                        pixmap = QPixmap(path)
+                        if not pixmap.isNull():
+                            self.local_projection_widget.general_bg_pixmap = pixmap
+                            if self.projection_window:
+                                self.projection_window.projection_widget.general_bg_pixmap = pixmap
+                            if self.projection_window_2:
+                                self.projection_window_2.projection_widget.general_bg_pixmap = pixmap
+                            self.local_projection_widget.update()
             except Exception as e:
                 print(f"Error cargando fondo de letras persistido: {e}")
+
+    # =========================================================================
+    # ACCESOS RÁPIDOS DE IMÁGENES (BIENVENIDA / DESPEDIDA)
+    # =========================================================================
+
+    def get_quick_image_path(self, image_type, title_name):
+        """Obtiene la ruta asignada a la imagen rápida (Bienvenida o Despedida)."""
+        config_file = os.path.join(PROJECT_DIR, f"quick_{image_type}_path.txt")
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, "r", encoding="utf-8") as f:
+                    saved_path = f.read().strip()
+                if saved_path == "NONE":
+                    return None
+                if saved_path:
+                    if os.path.isabs(saved_path) and os.path.exists(saved_path):
+                        return saved_path
+                    cand = os.path.join(PROJECT_DIR, saved_path)
+                    if os.path.exists(cand):
+                        return cand
+                    base = os.path.basename(saved_path)
+                    cand2 = os.path.join(PROJECT_DIR, "imported_images", base)
+                    if os.path.exists(cand2):
+                        return cand2
+            except Exception as e:
+                print(f"Error leyendo config de acceso rápido {image_type}: {e}")
+
+        # Buscar por defecto en la carpeta imported_images
+        imported_dir = os.path.join(PROJECT_DIR, "imported_images")
+        if os.path.exists(imported_dir):
+            for filename in os.listdir(imported_dir):
+                name_without_ext, _ = os.path.splitext(filename)
+                if name_without_ext.strip().lower() == title_name.strip().lower():
+                    cand = os.path.join(imported_dir, filename)
+                    if os.path.exists(cand):
+                        return cand
+
+        # Buscar en la base de datos
+        try:
+            conn = sqlite3.connect(database.DB_PATH)
+            conn.create_function("remove_accents", 1, remove_accents)
+            cursor = conn.cursor()
+            norm_title = remove_accents(title_name)
+            cursor.execute(
+                "SELECT file_path FROM images WHERE remove_accents(name) LIKE ? ORDER BY id DESC LIMIT 1",
+                (f"%{norm_title}%",)
+            )
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                db_path = row[0]
+                abs_path = db_path if os.path.isabs(db_path) else os.path.join(PROJECT_DIR, db_path)
+                if os.path.exists(abs_path):
+                    return abs_path
+                base = os.path.basename(db_path)
+                cand = os.path.join(PROJECT_DIR, "imported_images", base)
+                if os.path.exists(cand):
+                    return cand
+        except Exception as e:
+            print(f"Error buscando {title_name} en DB: {e}")
+
+        return None
+
+    def project_quick_image(self, image_type, title_name):
+        """Proyecta directamente la imagen de Bienvenida o Despedida."""
+        path = self.get_quick_image_path(image_type, title_name)
+        if not path or not os.path.exists(path):
+            reply = QMessageBox.question(
+                self,
+                f"Configurar {title_name}",
+                f"No hay una imagen asignada para «{title_name}».\n¿Deseas seleccionar una imagen ahora?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.change_quick_image(image_type, title_name)
+            return
+
+        self.load_image_to_preview(title_name, path)
+        if self.preview_list.count() > 0:
+            first_item = self.preview_list.item(0)
+            self.preview_list.setCurrentItem(first_item)
+            self.on_preview_card_clicked(first_item)
+
+    def change_quick_image(self, image_type, title_name):
+        """Permite seleccionar una nueva imagen desde el PC para Bienvenida o Despedida."""
+        file_dialog = QFileDialog(self)
+        file_dialog.setWindowTitle(f"Seleccionar Imagen para {title_name}")
+        file_dialog.setNameFilter("Imágenes (*.png *.jpg *.jpeg *.bmp *.webp)")
+        if file_dialog.exec():
+            selected_files = file_dialog.selectedFiles()
+            if not selected_files:
+                return
+
+            file_path = selected_files[0]
+            if not os.path.exists(file_path):
+                return
+
+            imported_dir = os.path.join(PROJECT_DIR, "imported_images")
+            os.makedirs(imported_dir, exist_ok=True)
+
+            _, ext = os.path.splitext(file_path)
+            dest_filename = f"{title_name}{ext}"
+            dest_path = os.path.join(imported_dir, dest_filename)
+
+            try:
+                shutil.copy2(file_path, dest_path)
+                abs_dest_path = os.path.abspath(dest_path)
+
+                config_file = os.path.join(PROJECT_DIR, f"quick_{image_type}_path.txt")
+                with open(config_file, "w", encoding="utf-8") as f:
+                    f.write(abs_dest_path)
+
+                conn = sqlite3.connect(database.DB_PATH)
+                cursor = conn.cursor()
+                rel_path = os.path.join("imported_images", dest_filename)
+                cursor.execute("SELECT id FROM images WHERE name = ?", (dest_filename,))
+                row = cursor.fetchone()
+                if not row:
+                    cursor.execute("INSERT INTO images (name, file_path) VALUES (?, ?)", (dest_filename, rel_path))
+                else:
+                    cursor.execute("UPDATE images SET file_path = ? WHERE id = ?", (rel_path, row[0]))
+                conn.commit()
+                conn.close()
+
+                if hasattr(self, "images_list") and hasattr(self, "image_search"):
+                    self.load_images_library(self.image_search.text())
+
+                # Proyectar inmediatamente la nueva imagen
+                self.project_quick_image(image_type, title_name)
+
+                QMessageBox.information(
+                    self,
+                    "Imagen Guardada",
+                    f"Se ha asignado y proyectado correctamente la imagen de «{title_name}»."
+                )
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "Error",
+                    f"No se pudo guardar la imagen: {str(e)}"
+                )
+
+    def remove_quick_image(self, image_type, title_name):
+        """Quita la asignación actual de la imagen rápida."""
+        reply = QMessageBox.question(
+            self,
+            "Quitar Imagen Rápida",
+            f"¿Estás seguro de que deseas desasignar la imagen de «{title_name}»?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        config_file = os.path.join(PROJECT_DIR, f"quick_{image_type}_path.txt")
+        try:
+            with open(config_file, "w", encoding="utf-8") as f:
+                f.write("NONE")
+        except Exception:
+            pass
+
+        QMessageBox.information(
+            self,
+            "Imagen Removida",
+            f"Se ha quitado la asignación rápida de «{title_name}»."
+        )
+
+    def show_quick_image_menu(self, image_type, title_name, global_pos):
+        """Muestra el menú contextual con opciones para la imagen rápida."""
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #18181b;
+                color: #f4f4f5;
+                border: 1px solid #3f3f46;
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 8px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #3f3f46;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #3f3f46;
+                margin: 4px 8px;
+            }
+        """)
+
+        proj_action = menu.addAction(f"🖼  Proyectar {title_name}")
+        proj_action.triggered.connect(
+            lambda: self.project_quick_image(image_type, title_name))
+
+        change_action = menu.addAction("📁  Cambiar Imagen...")
+        change_action.triggered.connect(
+            lambda: self.change_quick_image(image_type, title_name))
+
+        path = self.get_quick_image_path(image_type, title_name)
+        if path and os.path.exists(path):
+            menu.addSeparator()
+            remove_action = menu.addAction("✕  Quitar Imagen")
+            remove_action.triggered.connect(
+                lambda: self.remove_quick_image(image_type, title_name))
+
+        menu.exec(global_pos)
 
     # =========================================================================
     # CARGAR CANTOS A LA BIBLIOTECA (CON NORMALIZACIÓN DE ACENTOS)
@@ -2907,6 +3527,7 @@ class MainWindow(QMainWindow):
             self.songs_list.setItemWidget(item, widget)
 
         conn.close()
+        self._update_guion_buttons()
 
     def filter_songs(self):
         self.load_songs_library(self.song_search.text())
@@ -3114,10 +3735,12 @@ class MainWindow(QMainWindow):
         self.bible_inner_stack.setCurrentIndex(1)
 
     def set_active_nav_button(self, active_name):
+        self.current_nav = active_name
         for name, btn in self.nav_buttons.items():
             is_active = (name == active_name)
             btn.setProperty("active", "true" if is_active else "false")
             btn.style().polish(btn)
+        self._update_guion_buttons()
 
     # =========================================================================
     # INTERACCIÓN CON LA BIBLIOTECA (UN CLIC Y DOBLE CLIC)
@@ -3657,4 +4280,3 @@ if __name__ == "__main__":
     window.setMinimumSize(1024, 600)
     window.showMaximized()
     sys.exit(app.exec())
-    

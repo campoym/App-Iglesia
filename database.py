@@ -9,11 +9,20 @@ else:
     DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "iglesia.db")
 
 def init_db():
-    if getattr(sys, 'frozen', False) and not os.path.exists(DB_PATH):
-        bundled_db = os.path.join(sys._MEIPASS, "iglesia.db")
-        if os.path.exists(bundled_db):
+    if getattr(sys, 'frozen', False):
+        bundled_db = os.path.join(sys._MEIPASS, "iglesia.db") if hasattr(sys, '_MEIPASS') else None
+        should_copy = False
+        if not os.path.exists(DB_PATH):
+            should_copy = True
+        elif bundled_db and os.path.exists(bundled_db):
+            # Si el archivo existente es pequeño (< 100KB) y la empaquetada es la completa (> 1MB)
+            if os.path.getsize(DB_PATH) < 100000 and os.path.getsize(bundled_db) > 1000000:
+                should_copy = True
+
+        if should_copy and bundled_db and os.path.exists(bundled_db):
             try:
                 shutil.copy2(bundled_db, DB_PATH)
+                print("Base de datos empaquetada copiada exitosamente a:", DB_PATH)
             except Exception as e:
                 print(f"Error copying bundled database: {e}")
 
