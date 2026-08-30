@@ -94,32 +94,32 @@ class PreviewImageCardWidget(QFrame):
         self.setObjectName("previewCard")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 60, 15, 60)
-        layout.setSpacing(60)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
 
         self.header_label = QLabel(header)
         self.header_label.setObjectName("cardHeader")
         layout.addWidget(self.header_label)
 
-        # Etiqueta para la miniatura de la imagen
+        # Miniatura grande para que se vea bien en el panel
         self.thumb_label = QLabel()
-        # Relación de aspecto típica 16:9
-        self.thumb_label.setFixedSize(160, 90)
+        self.thumb_label.setFixedSize(220, 124)
         self.thumb_label.setStyleSheet(
             "background-color: #1a1a1e; border-radius: 4px;")
         self.thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Cargar y escalar la imagen
         pixmap = QPixmap(image_path)
         if not pixmap.isNull():
-            scaled = pixmap.scaled(self.thumb_label.size(
-            ), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            scaled = pixmap.scaled(
+                self.thumb_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
             self.thumb_label.setPixmap(scaled)
         layout.addWidget(self.thumb_label,
                          alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.name_label = QLabel(os.path.basename(image_path))
-        self.name_label.setObjectName("cardLyrics")  # Reusar estilo de lyrics
+        self.name_label.setObjectName("cardLyrics")
         self.name_label.setWordWrap(True)
         self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.name_label)
@@ -720,12 +720,21 @@ class CleanProjectionWidget(QFrame):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(20, 15, 20, 15)
 
-        # Línea superior (Etiqueta OBS)
+        # Línea superior (Etiqueta OBS + Botón de selección de pantallas)
         top_layout = QHBoxLayout()
         self.obs_title = QLabel("VENTANA OBS")
         self.obs_title.setObjectName("obsLabelTitle")
         top_layout.addWidget(self.obs_title)
         top_layout.addStretch()
+
+        self.btn_screens = QPushButton("🖥 Pantallas ▾")
+        self.btn_screens.setObjectName("subtleCtrlBtn")
+        self.btn_screens.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        self.btn_screens.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_screens.setToolTip("Configurar proyección en múltiples pantallas")
+        self.btn_screens.clicked.connect(self._on_screens_menu_clicked)
+        top_layout.addWidget(self.btn_screens)
+
         main_layout.addLayout(top_layout)
 
         main_layout.addStretch()
@@ -756,6 +765,8 @@ class CleanProjectionWidget(QFrame):
 
         self.help_btn = QPushButton("?")
         self.help_btn.setObjectName("helpRoundBtn")
+        self.help_btn.setToolTip("Opciones de proyección multipantalla")
+        self.help_btn.clicked.connect(self._on_help_clicked)
         bottom_layout.addWidget(self.help_btn)
 
         main_layout.addLayout(bottom_layout)
@@ -765,10 +776,11 @@ class CleanProjectionWidget(QFrame):
         # Ocultar controles administrativos en ventana externa
         if is_external:
             self.obs_title.hide()
+            self.btn_screens.hide()
             self.help_btn.hide()
         else:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.setToolTip("Haz clic derecho para seleccionar la pantalla de proyección")
+            self.setToolTip("Haz clic derecho o en 'Pantallas ▾' para proyectar en una o varias pantallas")
             self.text_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             self.obs_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             self.footer_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -934,11 +946,21 @@ class CleanProjectionWidget(QFrame):
         painter.end()
         super().paintEvent(event)
 
+    def _on_screens_menu_clicked(self):
+        main_win = self.window()
+        if hasattr(main_win, "show_screen_menu"):
+            main_win.show_screen_menu(self.btn_screens)
+
+    def _on_help_clicked(self):
+        main_win = self.window()
+        if hasattr(main_win, "show_screen_menu"):
+            main_win.show_screen_menu(self.help_btn)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.RightButton and not getattr(self, "is_external", False):
             main_win = self.window()
             if hasattr(main_win, "show_screen_menu"):
-                main_win.show_screen_menu(self, event.globalPosition().toPoint())
+                main_win.show_screen_menu(event.globalPosition().toPoint())
                 return
         super().mousePressEvent(event)
 
@@ -960,8 +982,13 @@ class ProjectionWindow(QWidget):
         layout.addWidget(self.projection_widget)
 
     def closeEvent(self, event):
-        if self.close_callback:
-            self.close_callback()
+        cb = self.close_callback
+        self.close_callback = None
+        if cb:
+            try:
+                cb()
+            except Exception as e:
+                print(f"Error in close_callback: {e}")
         super().closeEvent(event)
 
     def keyPressEvent(self, event):
@@ -1480,12 +1507,10 @@ class MainWindow(QMainWindow):
             "pptx": []
         }
 
-        # Estado de la proyección
+        # Estado de la proyección (Soporte multipantalla ilimitado)
         self.active_item_data = None
-        self.projection_window = None
-        self.projection_window_2 = None
-        self.projection_screen_1 = None   # QScreen asignada a ventana 1
-        self.projection_screen_2 = None   # QScreen asignada a ventana 2
+        self.projection_windows = {}      # {QScreen: ProjectionWindow}
+        self._is_external_obs_mode = False
 
         # Timer que verifica si las pantallas asignadas siguen conectadas
         self._screen_monitor_timer = QTimer()
@@ -3192,16 +3217,12 @@ class MainWindow(QMainWindow):
                         # Cargar el pixmap limpio (el paintEvent maneja el DPR)
                         pixmap = QPixmap(abs_dest_path)
                         self.local_projection_widget.general_bg_pixmap = pixmap
-                        if self.projection_window:
-                            self.projection_window.projection_widget.general_bg_pixmap = pixmap
-                        if self.projection_window_2:
-                            self.projection_window_2.projection_widget.general_bg_pixmap = pixmap
+                        for win in list(self.projection_windows.values()):
+                            if win and win.isVisible():
+                                win.projection_widget.general_bg_pixmap = pixmap
+                                win.projection_widget.update()
 
                         self.local_projection_widget.update()
-                        if self.projection_window:
-                            self.projection_window.projection_widget.update()
-                        if self.projection_window_2:
-                            self.projection_window_2.projection_widget.update()
 
                         QMessageBox.information(
                             self, "Fondo Guardado", "Se ha establecido el fondo general para las letras.")
@@ -3219,16 +3240,12 @@ class MainWindow(QMainWindow):
                     pass
 
             self.local_projection_widget.general_bg_pixmap = None
-            if self.projection_window:
-                self.projection_window.projection_widget.general_bg_pixmap = None
-            if self.projection_window_2:
-                self.projection_window_2.projection_widget.general_bg_pixmap = None
+            for win in list(self.projection_windows.values()):
+                if win and win.isVisible():
+                    win.projection_widget.general_bg_pixmap = None
+                    win.projection_widget.update()
 
             self.local_projection_widget.update()
-            if self.projection_window:
-                self.projection_window.projection_widget.update()
-            if self.projection_window_2:
-                self.projection_window_2.projection_widget.update()
 
             QMessageBox.information(
                 self, "Fondo Quitado", "Se ha quitado el fondo general para las letras (ahora es negro sólido).")
@@ -3259,10 +3276,10 @@ class MainWindow(QMainWindow):
                         pixmap = QPixmap(path)
                         if not pixmap.isNull():
                             self.local_projection_widget.general_bg_pixmap = pixmap
-                            if self.projection_window:
-                                self.projection_window.projection_widget.general_bg_pixmap = pixmap
-                            if self.projection_window_2:
-                                self.projection_window_2.projection_widget.general_bg_pixmap = pixmap
+                            for win in list(self.projection_windows.values()):
+                                if win and win.isVisible():
+                                    win.projection_widget.general_bg_pixmap = pixmap
+                                    win.projection_widget.update()
                             self.local_projection_widget.update()
             except Exception as e:
                 print(f"Error cargando fondo de letras persistido: {e}")
@@ -3835,12 +3852,34 @@ class MainWindow(QMainWindow):
     # ACCIONES DE PROYECCIÓN ESTABLE
     # =========================================================================
 
+    @property
+    def projection_window(self):
+        """Propiedad de compatibilidad: retorna la primera ventana de proyección activa."""
+        for win in self.projection_windows.values():
+            if win and win.isVisible():
+                return win
+        return None
+
+    @property
+    def projection_window_2(self):
+        """Propiedad de compatibilidad: retorna la segunda ventana de proyección activa."""
+        wins = [w for w in self.projection_windows.values() if w and w.isVisible()]
+        return wins[1] if len(wins) > 1 else None
+
+    # =========================================================================
+    # ACCIONES DE PROYECCIÓN MULTIPANTALLA ESTABLE
+    # =========================================================================
+
     def project_selected_card(self, item):
         data = item.data(Qt.ItemDataRole.UserRole)
+        if data:
+            self.project_active_item(data)
+
+    def project_active_item(self, data):
         if not data:
             return
 
-        mode = data["mode"]
+        mode = data.get("mode")
         if mode == "text":
             text = data["text"]
             header = data.get("header", "")
@@ -3859,14 +3898,11 @@ class MainWindow(QMainWindow):
             # Local
             self.local_projection_widget.display_text(text, header, song_title)
 
-            # Externo 1
-            if self.projection_window and self.projection_window.isVisible():
-                self.projection_window.projection_widget.display_text(
-                    text, header, song_title)
-            # Externo 2
-            if self.projection_window_2 and self.projection_window_2.isVisible():
-                self.projection_window_2.projection_widget.display_text(
-                    text, header, song_title)
+            # Todas las pantallas externas activas
+            for win in list(self.projection_windows.values()):
+                if win and win.isVisible():
+                    win.projection_widget.display_text(text, header, song_title)
+
         elif mode == "image":
             file_path = data["file_path"]
             name = data.get("name", "")
@@ -3881,30 +3917,24 @@ class MainWindow(QMainWindow):
             # Local
             self.local_projection_widget.display_image(file_path, header, name)
 
-            # Externo 1
-            if self.projection_window and self.projection_window.isVisible():
-                self.projection_window.projection_widget.display_image(
-                    file_path, header, name)
-            # Externo 2
-            if self.projection_window_2 and self.projection_window_2.isVisible():
-                self.projection_window_2.projection_widget.display_image(
-                    file_path, header, name)
+            # Todas las pantallas externas activas
+            for win in list(self.projection_windows.values()):
+                if win and win.isVisible():
+                    win.projection_widget.display_image(file_path, header, name)
 
     def project_black(self):
         self.current_projection_mode = "black"
         self.local_projection_widget.set_black_screen()
-        if self.projection_window and self.projection_window.isVisible():
-            self.projection_window.projection_widget.set_black_screen()
-        if self.projection_window_2 and self.projection_window_2.isVisible():
-            self.projection_window_2.projection_widget.set_black_screen()
+        for win in list(self.projection_windows.values()):
+            if win and win.isVisible():
+                win.projection_widget.set_black_screen()
 
     def project_clear_text(self):
         if self.current_projection_mode == "text":
             self.local_projection_widget.clear_text_only()
-            if self.projection_window and self.projection_window.isVisible():
-                self.projection_window.projection_widget.clear_text_only()
-            if self.projection_window_2 and self.projection_window_2.isVisible():
-                self.projection_window_2.projection_widget.clear_text_only()
+            for win in list(self.projection_windows.values()):
+                if win and win.isVisible():
+                    win.projection_widget.clear_text_only()
 
     def project_restore(self):
         if self.last_projected_mode == "text":
@@ -3912,76 +3942,127 @@ class MainWindow(QMainWindow):
             self.local_projection_widget.display_text(
                 self.last_projected_text, self.last_projected_header, self.last_projected_song_title
             )
-            if self.projection_window and self.projection_window.isVisible():
-                self.projection_window.projection_widget.display_text(
-                    self.last_projected_text, self.last_projected_header, self.last_projected_song_title
-                )
-            if self.projection_window_2 and self.projection_window_2.isVisible():
-                self.projection_window_2.projection_widget.display_text(
-                    self.last_projected_text, self.last_projected_header, self.last_projected_song_title
-                )
+            for win in list(self.projection_windows.values()):
+                if win and win.isVisible():
+                    win.projection_widget.display_text(
+                        self.last_projected_text, self.last_projected_header, self.last_projected_song_title
+                    )
         elif self.last_projected_mode == "image":
             self.current_projection_mode = "image"
             self.local_projection_widget.display_image(
                 self.last_projected_image_path, self.last_projected_header, self.last_projected_song_title
             )
-            if self.projection_window and self.projection_window.isVisible():
-                self.projection_window.projection_widget.display_image(
-                    self.last_projected_image_path, self.last_projected_header, self.last_projected_song_title
-                )
-            if self.projection_window_2 and self.projection_window_2.isVisible():
-                self.projection_window_2.projection_widget.display_image(
-                    self.last_projected_image_path, self.last_projected_header, self.last_projected_song_title
-                )
+            for win in list(self.projection_windows.values()):
+                if win and win.isVisible():
+                    win.projection_widget.display_image(
+                        self.last_projected_image_path, self.last_projected_header, self.last_projected_song_title
+                    )
 
-    def toggle_projection_window_2(self):
-        if not self.projection_window_2:
-            self.projection_window_2 = ProjectionWindow(
-                close_callback=self.on_projection_window_2_closed)
-            self.projection_window_2._main_window_ref = self
-            self.projection_window_2.setWindowTitle(
-                "Salida de Proyección 2 (Pantalla Completa)")
-            self.projection_window_2.projection_widget.general_bg_pixmap = \
-                self.local_projection_widget.general_bg_pixmap
-            self.projection_window_2.projection_widget.font_size_offset = \
-                self.external_font_size_offset
+    # =========================================================================
+    # GESTOR DE PROYECCIÓN MULTIPANTALLA
+    # =========================================================================
 
-        if self.projection_window_2.isVisible():
-            self.projection_window_2.hide()
-            if hasattr(self, "btn_toggle_projector_2") and self.btn_toggle_projector_2:
-                self.btn_toggle_projector_2.setText("V. Externa 2")
+    def is_screen_projecting(self, screen):
+        """Verifica si una pantalla específica tiene una ventana de proyección abierta y visible."""
+        win = self.projection_windows.get(screen)
+        return bool(win and win.isVisible())
+
+    def toggle_screen_projection(self, screen):
+        """Alterna (activa/desactiva) la proyección en una pantalla específica sin afectar las demás."""
+        if self.is_screen_projecting(screen):
+            self.stop_projection_on_screen(screen)
         else:
-            self.projection_window_2.show()
-            if hasattr(self, "btn_toggle_projector_2") and self.btn_toggle_projector_2:
-                self.btn_toggle_projector_2.setText("Ocultar V. Ext 2")
+            self.start_projection_on_screen(screen)
 
-            # Sincronizar estado actual
-            self.projection_window_2.projection_widget.is_black_screen = \
-                self.local_projection_widget.is_black_screen
-            if self.current_projection_mode == "text":
-                self.projection_window_2.projection_widget.display_text(
-                    self.last_projected_text,
-                    self.last_projected_header,
-                    self.last_projected_song_title
-                )
-            elif self.current_projection_mode == "image":
-                self.projection_window_2.projection_widget.display_image(
-                    self.last_projected_image_path,
-                    self.last_projected_header,
-                    self.last_projected_song_title
-                )
-            elif self.current_projection_mode == "black":
-                self.projection_window_2.projection_widget.set_black_screen()
+    def start_projection_on_screen(self, screen):
+        """Abre la proyección en la pantalla indicada a pantalla completa."""
+        # Si ya existe una ventana activa en esta pantalla, no hacer nada
+        if screen in self.projection_windows:
+            old_win = self.projection_windows[screen]
+            if old_win and old_win.isVisible():
+                return
+            elif old_win:
+                try:
+                    old_win.close()
+                except Exception:
+                    pass
 
-    def on_projection_window_2_closed(self):
-        if hasattr(self, "btn_toggle_projector_2") and self.btn_toggle_projector_2:
-            self.btn_toggle_projector_2.setText("V. Externa 2 ▾")
-            self.btn_toggle_projector_2.setStyleSheet("")
-        self.projection_screen_2 = None
+        win = ProjectionWindow(close_callback=lambda s=screen: self.on_projection_screen_closed(s))
+        win._main_window_ref = self
 
-    def show_screen_menu(self, target=None, window_num=1):
-        """Muestra un menú con las pantallas disponibles para seleccionar."""
         screens = QApplication.screens()
+        screen_idx = screens.index(screen) + 1 if screen in screens else ""
+        win.setWindowTitle(f"Salida de Proyección - Pantalla {screen_idx}")
+
+        # Sincronizar fondo y offset de fuente
+        win.projection_widget.general_bg_pixmap = self.local_projection_widget.general_bg_pixmap
+        win.projection_widget.font_size_offset = self.external_font_size_offset
+
+        # Posicionar ventana en la pantalla correspondiente en modo pantalla completa
+        geo = screen.geometry()
+        win.setGeometry(geo)
+        win.show()
+        if win.windowHandle():
+            win.windowHandle().setScreen(screen)
+        win.setGeometry(geo)
+        win.showFullScreen()
+
+        self.projection_windows[screen] = win
+
+        # Sincronizar contenido proyectado actualmente
+        self._sync_projection_window(win)
+
+        self.adjust_obs_container_size(is_external_visible=True)
+        self._update_obs_header_status()
+
+    def stop_projection_on_screen(self, screen):
+        """Detiene y cierra la proyección en una pantalla específica."""
+        if screen in self.projection_windows:
+            win = self.projection_windows.pop(screen, None)
+            if win:
+                win.close_callback = None
+                win.close()
+
+        has_active = any(w and w.isVisible() for w in self.projection_windows.values())
+        self.adjust_obs_container_size(is_external_visible=has_active)
+        self._update_obs_header_status()
+
+    def on_projection_screen_closed(self, screen):
+        """Callback cuando una ventana de proyección externa es cerrada por el usuario o SO."""
+        if screen in self.projection_windows:
+            self.projection_windows.pop(screen, None)
+        has_active = any(w and w.isVisible() for w in self.projection_windows.values())
+        self.adjust_obs_container_size(is_external_visible=has_active)
+        self._update_obs_header_status()
+
+    def project_all_secondary_screens(self):
+        """Activa la proyección en todas las pantallas secundarias detectadas."""
+        screens = QApplication.screens()
+        primary = QApplication.primaryScreen()
+        secondary = [s for s in screens if s != primary]
+        targets = secondary if secondary else screens
+        for s in targets:
+            self.start_projection_on_screen(s)
+
+    def project_all_screens(self):
+        """Activa la proyección en absolutamente todas las pantallas conectadas."""
+        for s in QApplication.screens():
+            self.start_projection_on_screen(s)
+
+    def close_all_projections(self):
+        """Cierra todas las pantallas de proyección activas."""
+        for screen, win in list(self.projection_windows.items()):
+            if win:
+                win.close_callback = None
+                win.close()
+        self.projection_windows.clear()
+        self.adjust_obs_container_size(is_external_visible=False)
+        self._update_obs_header_status()
+
+    def show_screen_menu(self, target=None, pos=None, *args, **kwargs):
+        """Muestra el menú interactivo para gestionar la proyección individual o múltiple."""
+        screens = QApplication.screens()
+        primary_screen = QApplication.primaryScreen()
         menu = QMenu(self)
         menu.setStyleSheet("""
             QMenu {
@@ -3989,43 +4070,71 @@ class MainWindow(QMainWindow):
                 color: #f4f4f5;
                 border: 1px solid #3f3f46;
                 border-radius: 8px;
-                padding: 4px;
+                padding: 6px;
             }
             QMenu::item {
-                padding: 8px 20px;
+                padding: 8px 24px;
                 border-radius: 4px;
+                font-size: 12px;
             }
             QMenu::item:selected {
-                background-color: #3f3f46;
+                background-color: #27272a;
+                color: #ffffff;
             }
             QMenu::separator {
                 height: 1px;
                 background: #3f3f46;
-                margin: 4px 8px;
+                margin: 5px 8px;
             }
         """)
 
-        # Opción para cerrar si ya está abierta
-        win = self.projection_window if window_num == 1 else self.projection_window_2
-        if win and win.isVisible():
-            close_action = menu.addAction("✕  Cerrar proyección")
-            close_action.triggered.connect(
-                lambda: self.close_projection_window(window_num))
+        active_screens = [s for s in screens if self.is_screen_projecting(s)]
+        secondary_screens = [s for s in screens if s != primary_screen]
+
+        # Acciones masivas
+        if len(screens) > 1:
+            all_sec_active = bool(secondary_screens and all(self.is_screen_projecting(s) for s in secondary_screens))
+            if not all_sec_active:
+                act_all_sec = menu.addAction("🖥  Proyectar en TODAS las pantallas secundarias")
+                act_all_sec.triggered.connect(self.project_all_secondary_screens)
+
+            if len(active_screens) < len(screens) and len(secondary_screens) > 1:
+                act_all = menu.addAction("🖥  Proyectar en TODAS las pantallas (incluida principal)")
+                act_all.triggered.connect(self.project_all_screens)
+
             menu.addSeparator()
 
-        # Una acción por cada pantalla disponible
+        if active_screens:
+            count_str = f" ({len(active_screens)} activa{'s' if len(active_screens) > 1 else ''})"
+            close_all_action = menu.addAction(f"✕  Cerrar todas las proyecciones{count_str}")
+            close_all_action.triggered.connect(self.close_all_projections)
+            menu.addSeparator()
+
+        # Lista de pantallas individuales
         for i, screen in enumerate(screens):
             geo = screen.geometry()
-            label = f"🖥  Proyectar en Pantalla {i + 1}  —  {geo.width()}×{geo.height()}"
-            if screen == QApplication.primaryScreen():
-                label += "  (principal)"
-            if window_num == 1 and self.projection_screen_1 == screen and self.projection_window and self.projection_window.isVisible():
-                label = f"● Pantalla {i + 1}  —  {geo.width()}×{geo.height()}  [Activa]"
-            action = menu.addAction(label)
-            action.triggered.connect(
-                lambda checked, s=screen, n=window_num: self.send_to_screen(s, n))
+            is_active = self.is_screen_projecting(screen)
+            is_primary = (screen == primary_screen)
 
-        if isinstance(target, QPoint):
+            extra_info = []
+            if is_primary:
+                extra_info.append("Principal / Este monitor")
+            if is_active:
+                extra_info.append("● PROYECTANDO - Clic para apagar")
+            else:
+                extra_info.append("Clic para proyectar")
+
+            info_str = " (" + " · ".join(extra_info) + ")" if extra_info else ""
+            icon_status = "🟢" if is_active else "🖥"
+            label = f"{icon_status}  Pantalla {i + 1}  —  {geo.width()}×{geo.height()}{info_str}"
+
+            action = menu.addAction(label)
+            action.triggered.connect(lambda checked, s=screen: self.toggle_screen_projection(s))
+
+        # Posicionamiento del menú
+        if isinstance(pos, QPoint):
+            menu.exec(pos)
+        elif isinstance(target, QPoint):
             menu.exec(target)
         elif isinstance(target, QWidget):
             menu.exec(target.mapToGlobal(target.rect().center()))
@@ -4033,73 +4142,21 @@ class MainWindow(QMainWindow):
             from PyQt6.QtGui import QCursor
             menu.exec(QCursor.pos())
 
-    def send_to_screen(self, screen, window_num=1):
-        """Abre o mueve la ventana externa a la pantalla indicada en fullscreen."""
-        if window_num == 1:
-            if not self.projection_window:
-                self.projection_window = ProjectionWindow(
-                    close_callback=self.on_projection_window_closed)
-                self.projection_window._main_window_ref = self
-                self.projection_window.projection_widget.general_bg_pixmap = \
-                    self.local_projection_widget.general_bg_pixmap
-                self.projection_window.projection_widget.font_size_offset = \
-                    self.external_font_size_offset
-
-            win = self.projection_window
-            self.projection_screen_1 = screen
-            btn = getattr(self, "btn_toggle_projector", None)
-        else:
-            if not self.projection_window_2:
-                self.projection_window_2 = ProjectionWindow(
-                    close_callback=self.on_projection_window_2_closed)
-                self.projection_window_2._main_window_ref = self
-                self.projection_window_2.projection_widget.general_bg_pixmap = \
-                    self.local_projection_widget.general_bg_pixmap
-                self.projection_window_2.projection_widget.font_size_offset = \
-                    self.external_font_size_offset
-
-            win = self.projection_window_2
-            self.projection_screen_2 = screen
-            btn = getattr(self, "btn_toggle_projector_2", None)
-
-        # Mover a la pantalla y poner en fullscreen
-        geo = screen.geometry()
-        win.setGeometry(geo)
-        win.showFullScreen()
-        win.windowHandle().setScreen(screen)
-        win.setGeometry(geo)
-
-        if btn:
-            geo_str = f"{geo.width()}×{geo.height()}"
-            btn.setText(f"● P{QApplication.screens().index(screen) + 1} {geo_str} ▾")
-            btn.setStyleSheet(btn.styleSheet() + "color: #4ade80;")
-
-        self.adjust_obs_container_size(is_external_visible=True)
-
-        # Sincronizar contenido actual
-        self._sync_projection_window(win)
-
-    def close_projection_window(self, window_num=1):
-        """Cierra la ventana externa del número indicado."""
-        if window_num == 1:
-            if self.projection_window:
-                self.projection_window.close()
-            self.projection_screen_1 = None
-        else:
-            if self.projection_window_2:
-                self.projection_window_2.close()
-            self.projection_screen_2 = None
-
     def _sync_projection_window(self, win):
         """Sincroniza el contenido actual de proyección a una ventana externa."""
         win.projection_widget.is_black_screen = \
             self.local_projection_widget.is_black_screen
         if self.current_projection_mode == "text":
-            win.projection_widget.display_text(
-                self.last_projected_text,
-                self.last_projected_header,
-                self.last_projected_song_title
-            )
+            if not self.local_projection_widget.text_label.text():
+                win.projection_widget.display_text(
+                    "", self.last_projected_header, self.last_projected_song_title
+                )
+            else:
+                win.projection_widget.display_text(
+                    self.last_projected_text,
+                    self.last_projected_header,
+                    self.last_projected_song_title
+                )
         elif self.current_projection_mode == "image":
             win.projection_widget.display_image(
                 self.last_projected_image_path,
@@ -4109,143 +4166,133 @@ class MainWindow(QMainWindow):
         elif self.current_projection_mode == "black":
             win.projection_widget.set_black_screen()
 
+    def _update_obs_header_status(self):
+        """Actualiza la cabecera del visor OBS con el estado de las proyecciones activas."""
+        active_screens = [s for s in QApplication.screens() if self.is_screen_projecting(s)]
+        screens = QApplication.screens()
+
+        if not active_screens:
+            self.local_projection_widget.obs_title.setText("VENTANA OBS")
+            self.local_projection_widget.obs_title.setStyleSheet("color: #52525b; font-weight: bold; font-size: 10px;")
+            if hasattr(self.local_projection_widget, "btn_screens"):
+                self.local_projection_widget.btn_screens.setText("🖥 Pantallas ▾")
+                self.local_projection_widget.btn_screens.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        elif len(active_screens) == 1:
+            s = active_screens[0]
+            idx = screens.index(s) + 1 if s in screens else "?"
+            geo = s.geometry()
+            self.local_projection_widget.obs_title.setText(f"VENTANA OBS ● Proyectando en P{idx} ({geo.width()}×{geo.height()})")
+            self.local_projection_widget.obs_title.setStyleSheet("color: #4ade80; font-weight: bold; font-size: 10px;")
+            if hasattr(self.local_projection_widget, "btn_screens"):
+                self.local_projection_widget.btn_screens.setText(f"● P{idx} Activa ▾")
+                self.local_projection_widget.btn_screens.setStyleSheet("padding: 2px 8px; font-size: 11px; color: #4ade80; border-color: #22c55e;")
+        else:
+            self.local_projection_widget.obs_title.setText(f"VENTANA OBS ● Proyectando en {len(active_screens)} pantallas")
+            self.local_projection_widget.obs_title.setStyleSheet("color: #4ade80; font-weight: bold; font-size: 10px;")
+            if hasattr(self.local_projection_widget, "btn_screens"):
+                self.local_projection_widget.btn_screens.setText(f"● {len(active_screens)} Pantallas ▾")
+                self.local_projection_widget.btn_screens.setStyleSheet("padding: 2px 8px; font-size: 11px; color: #4ade80; border-color: #22c55e;")
+
     def _check_screens_connected(self):
-        """Verifica cada 2s si las pantallas asignadas siguen conectadas.
-        Si una se desconectó, cierra automáticamente esa ventana externa."""
+        """Verifica cada 2s si las pantallas asignadas siguen conectadas físicamente."""
         available = QApplication.screens()
+        disconnected = [s for s in list(self.projection_windows.keys()) if s not in available]
+        for s in disconnected:
+            win = self.projection_windows.pop(s, None)
+            if win:
+                try:
+                    win.close_callback = None
+                    win.close()
+                except Exception:
+                    pass
 
-        if (self.projection_screen_1 and
-                self.projection_screen_1 not in available and
-                self.projection_window and
-                self.projection_window.isVisible()):
-            self.projection_window.close()
-            self.projection_screen_1 = None
-            if hasattr(self, "btn_toggle_projector") and self.btn_toggle_projector:
-                self.btn_toggle_projector.setText("V. Externa ▾")
-                self.btn_toggle_projector.setStyleSheet("")
-            QMessageBox.warning(
-                self, "Pantalla desconectada",
-                "La pantalla asignada a V. Externa fue desconectada.\nLa proyección fue cerrada automáticamente.")
-
-        if (self.projection_screen_2 and
-                self.projection_screen_2 not in available and
-                self.projection_window_2 and
-                self.projection_window_2.isVisible()):
-            self.projection_window_2.close()
-            self.projection_screen_2 = None
-            if hasattr(self, "btn_toggle_projector_2") and self.btn_toggle_projector_2:
-                self.btn_toggle_projector_2.setText("V. Externa 2 ▾")
-                self.btn_toggle_projector_2.setStyleSheet("")
-            QMessageBox.warning(
-                self, "Pantalla desconectada",
-                "La pantalla asignada a V. Externa 2 fue desconectada.\nLa proyección fue cerrada automáticamente.")
+        if disconnected:
+            has_active = any(w and w.isVisible() for w in self.projection_windows.values())
+            self.adjust_obs_container_size(is_external_visible=has_active)
+            self._update_obs_header_status()
 
     def toggle_projection_window(self):
-        if not self.projection_window:
-            self.projection_window = ProjectionWindow(close_callback=self.on_projection_window_closed)
-            self.projection_window._main_window_ref = self
-            # Copiar la imagen de fondo actual a la nueva ventana externa
-            self.projection_window.projection_widget.general_bg_pixmap = self.local_projection_widget.general_bg_pixmap
-            # Sincronizar offset de fuente
-            self.projection_window.projection_widget.font_size_offset = self.external_font_size_offset
+        """Alterna la proyección en la primera pantalla secundaria disponible."""
+        screens = QApplication.screens()
+        primary = QApplication.primaryScreen()
+        secondary = [s for s in screens if s != primary]
+        target = secondary[0] if secondary else primary
+        self.toggle_screen_projection(target)
 
-        if self.projection_window.isVisible():
-            self.projection_window.hide()
-            if hasattr(self, "btn_toggle_projector") and self.btn_toggle_projector:
-                self.btn_toggle_projector.setText("V. Externa")
-            self.adjust_obs_container_size(is_external_visible=False)
-        else:
-            self.projection_window.show()
-            if hasattr(self, "btn_toggle_projector") and self.btn_toggle_projector:
-                self.btn_toggle_projector.setText("Ocultar V. Ext")
-            self.adjust_obs_container_size(is_external_visible=True)
+    def toggle_projection_window_2(self):
+        """Alterna la proyección en la segunda pantalla secundaria disponible."""
+        screens = QApplication.screens()
+        primary = QApplication.primaryScreen()
+        secondary = [s for s in screens if s != primary]
+        if len(secondary) > 1:
+            self.toggle_screen_projection(secondary[1])
+        elif screens:
+            self.toggle_screen_projection(screens[-1])
 
-            # Sincronizar
-            self.projection_window.projection_widget.is_black_screen = self.local_projection_widget.is_black_screen
-            if self.current_projection_mode == "text":
-                if not self.local_projection_widget.text_label.text():
-                    self.projection_window.projection_widget.display_text(
-                        "", self.last_projected_header, self.last_projected_song_title
-                    )
-                else:
-                    self.projection_window.projection_widget.display_text(
-                        self.last_projected_text, self.last_projected_header, self.last_projected_song_title
-                    )
-            elif self.current_projection_mode == "image":
-                self.projection_window.projection_widget.display_image(
-                    self.last_projected_image_path, self.last_projected_header, self.last_projected_song_title
-                )
-            elif self.current_projection_mode == "black":
-                self.projection_window.projection_widget.set_black_screen()
+    def close_projection_window(self, window_num=1):
+        """Cierra proyecciones externas."""
+        self.close_all_projections()
 
     def on_projection_window_closed(self):
-        if hasattr(self, "btn_toggle_projector") and self.btn_toggle_projector:
-            self.btn_toggle_projector.setText("V. Externa ▾")
-            self.btn_toggle_projector.setStyleSheet("")
-        self.projection_screen_1 = None
-        self.adjust_obs_container_size(is_external_visible=False)
+        has_active = any(w and w.isVisible() for w in self.projection_windows.values())
+        self.adjust_obs_container_size(is_external_visible=has_active)
+        self._update_obs_header_status()
+
+    def on_projection_window_2_closed(self):
+        has_active = any(w and w.isVisible() for w in self.projection_windows.values())
+        self.adjust_obs_container_size(is_external_visible=has_active)
+        self._update_obs_header_status()
 
     def adjust_obs_container_size(self, is_external_visible):
-        if is_external_visible:
-            # Ventana externa activa:
-            # 1. Habilitar la interacción con el splitter para cambiar de tamaño
+        has_active = any(w and w.isVisible() for w in self.projection_windows.values()) if is_external_visible else False
+        if getattr(self, "_is_external_obs_mode", None) == has_active:
+            return
+        self._is_external_obs_mode = has_active
+
+        if has_active:
             handle = self.right_splitter.handle(1)
             if handle:
                 handle.setEnabled(True)
                 handle.setCursor(Qt.CursorShape.SplitVCursor)
 
-            # 2. Permitir que el obs_container sea más pequeño (mínimo 80px)
-            #    y no restringir su altura máxima para que el usuario pueda cambiarla libremente
             self.obs_container.setMinimumHeight(80)
             self.obs_container.setMaximumHeight(16777215)
 
-            # 3. Ajustar el tamaño inicial del splitter para que se haga un poco más chica de lo normal (e.g. 150px)
             total_height = self.right_splitter.height()
-            if total_height > 200:
-                self.right_splitter.setSizes([total_height - 150, 150])
-            else:
-                self.right_splitter.setSizes([1000, 150])
+            # Dar al menos 60% al panel de biblioteca, 40% al OBS
+            lib_height = max(int(total_height * 0.60), 300)
+            obs_height = total_height - lib_height
+            self.right_splitter.setSizes([lib_height, obs_height])
         else:
-            # Ventana externa inactiva:
-            # 1. Deshabilitar la interacción con el splitter
             handle = self.right_splitter.handle(1)
             if handle:
                 handle.setEnabled(False)
                 handle.setCursor(Qt.CursorShape.ArrowCursor)
 
-            # 2. Restaurar la altura mínima de 320px y sin tope máximo
             self.obs_container.setMinimumHeight(320)
             self.obs_container.setMaximumHeight(16777215)
-
-            # 3. Restaurar las proporciones normales (relación 2:4)
             self.right_splitter.setSizes([2000, 4000])
 
     def increase_font_size(self):
         self.external_font_size_offset = getattr(self, "external_font_size_offset", 0) + 4
-        if self.projection_window and self.projection_window.isVisible():
-            self.projection_window.projection_widget.font_size_offset = self.external_font_size_offset
-            self.projection_window.projection_widget.adjust_font_size()
-        if self.projection_window_2 and self.projection_window_2.isVisible():
-            self.projection_window_2.projection_widget.font_size_offset = self.external_font_size_offset
-            self.projection_window_2.projection_widget.adjust_font_size()
+        for win in list(self.projection_windows.values()):
+            if win and win.isVisible():
+                win.projection_widget.font_size_offset = self.external_font_size_offset
+                win.projection_widget.adjust_font_size()
 
     def decrease_font_size(self):
         self.external_font_size_offset = getattr(self, "external_font_size_offset", 0) - 4
-        if self.projection_window and self.projection_window.isVisible():
-            self.projection_window.projection_widget.font_size_offset = self.external_font_size_offset
-            self.projection_window.projection_widget.adjust_font_size()
-        if self.projection_window_2 and self.projection_window_2.isVisible():
-            self.projection_window_2.projection_widget.font_size_offset = self.external_font_size_offset
-            self.projection_window_2.projection_widget.adjust_font_size()
+        for win in list(self.projection_windows.values()):
+            if win and win.isVisible():
+                win.projection_widget.font_size_offset = self.external_font_size_offset
+                win.projection_widget.adjust_font_size()
 
     def reset_font_size(self):
         self.external_font_size_offset = 0
-        if self.projection_window and self.projection_window.isVisible():
-            self.projection_window.projection_widget.font_size_offset = 0
-            self.projection_window.projection_widget.adjust_font_size()
-        if self.projection_window_2 and self.projection_window_2.isVisible():
-            self.projection_window_2.projection_widget.font_size_offset = 0
-            self.projection_window_2.projection_widget.adjust_font_size()
+        for win in list(self.projection_windows.values()):
+            if win and win.isVisible():
+                win.projection_widget.font_size_offset = 0
+                win.projection_widget.adjust_font_size()
 
     # =========================================================================
     # GESTIÓN DEL GUION (TEMPORAL)
@@ -4261,8 +4308,11 @@ class MainWindow(QMainWindow):
         self._update_guion_buttons()
 
     def closeEvent(self, event):
-        if self.projection_window:
-            self.projection_window.close()
+        for win in list(self.projection_windows.values()):
+            if win:
+                win.close_callback = None
+                win.close()
+        self.projection_windows.clear()
         event.accept()
 
 
@@ -4280,3 +4330,4 @@ if __name__ == "__main__":
     window.setMinimumSize(1024, 600)
     window.showMaximized()
     sys.exit(app.exec())
+    
