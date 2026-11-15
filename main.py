@@ -1,74 +1,85 @@
+# ---------------------------------------------------------------------------
+# App bootstrap and project setup
+# ---------------------------------------------------------------------------
 import os
 import sys
 import shutil
 import sqlite3
 import re
 import unicodedata
+from html import escape as escape_html
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLineEdit, QLabel,
     QFileDialog, QMessageBox, QSplitter, QFrame, QGridLayout, QStackedWidget,
-    QDialog, QTextEdit, QScrollArea, QComboBox, QSizePolicy, QMenu
+    QDialog, QTextEdit, QScrollArea, QComboBox, QSizePolicy, QMenu, QCheckBox,
+    QToolButton, QStyle
 )
 from PyQt6.QtCore import Qt, QSize, QTimer, QPoint
-from PyQt6.QtGui import QPixmap, QColor, QShortcut, QKeySequence
+from PyQt6.QtGui import QPixmap, QColor, QShortcut, QKeySequence, QIcon
 
 import database
 import pptx_helper
 import pdf_helper
 
-# Configurar carpetas de almacenamiento para recursos
-# PROJECT_DIR apunta siempre al directorio donde está el .exe o el main.py
-# sys.frozen es True cuando corre empaquetado con PyInstaller
-if getattr(sys, 'frozen', False):
-    PROJECT_DIR = os.path.dirname(sys.executable)
-else:
-    PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# DB_PATH usa PROJECT_DIR — funciona en desarrollo y empaquetado con PyInstaller
+def is_frozen_app():
+    return bool(getattr(sys, "frozen", False))
+
+
+def get_project_dir():
+    if is_frozen_app():
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+PROJECT_DIR = get_project_dir()
 DB_PATH = os.path.join(PROJECT_DIR, "iglesia.db")
-database.DB_PATH = DB_PATH  # override para que todo el código use el path correcto
-database.init_db()
+LOGO_PATH = os.path.join(PROJECT_DIR, "station_selah.svg")
+if not os.path.exists(LOGO_PATH) and hasattr(sys, "_MEIPASS"):
+    LOGO_PATH = os.path.join(sys._MEIPASS, "station_selah.svg")
+database.DB_PATH = DB_PATH
 
 
 def init_project_resources():
-    """Asegura que las carpetas y recursos base existan en PROJECT_DIR."""
-    for folder_name in ["imported_images", "imported_pptx"]:
+    """Ensures local resource folders exist and copies packaged assets when needed."""
+    for folder_name in ("imported_images", "imported_pptx"):
         target_dir = os.path.join(PROJECT_DIR, folder_name)
         os.makedirs(target_dir, exist_ok=True)
-        # Si estamos en modo empaquetado, copiar recursos predeterminados de _MEIPASS
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+
+        if is_frozen_app() and hasattr(sys, "_MEIPASS"):
             source_dir = os.path.join(sys._MEIPASS, folder_name)
             if os.path.exists(source_dir):
                 for item in os.listdir(source_dir):
-                    s = os.path.join(source_dir, item)
-                    d = os.path.join(target_dir, item)
-                    if not os.path.exists(d):
-                        try:
-                            if os.path.isdir(s):
-                                shutil.copytree(s, d)
-                            else:
-                                shutil.copy2(s, d)
-                        except Exception as e:
-                            print(f"Error copiando recurso empaquetado {item}: {e}")
+                    source_path = os.path.join(source_dir, item)
+                    destination_path = os.path.join(target_dir, item)
+                    if os.path.exists(destination_path):
+                        continue
+                    try:
+                        if os.path.isdir(source_path):
+                            shutil.copytree(source_path, destination_path)
+                        else:
+                            shutil.copy2(source_path, destination_path)
+                    except Exception as exc:
+                        print(f"Error copiando recurso empaquetado {item}: {exc}")
 
 
+database.init_db()
 init_project_resources()
 
 
+# ---------------------------------------------------------------------------
+# Text utilities
+# ---------------------------------------------------------------------------
 def remove_accents(text):
-    """
-    Normaliza el texto y elimina las tildes/acentos en español (á -> a, ü -> u, etc.)
-    Manteniendo caracteres propios como la ñ.
-    """
+    """Normalizes text and removes Spanish accents while keeping characters like ñ."""
     if not text:
         return ""
-    # Normalizar en forma NFD (separa letras de sus diacríticos)
-    normalized = unicodedata.normalize('NFD', text)
-    # Filtrar diacríticos (marcas de acento)
+    normalized = unicodedata.normalize("NFD", text)
     return "".join(
-        c for c in normalized
-        if unicodedata.category(c) != 'Mn'
+        char for char in normalized
+        if unicodedata.category(char) != "Mn"
     ).lower()
 
 
@@ -130,8 +141,8 @@ class PreviewImageCardWidget(QFrame):
         if is_selected:
             self.setStyleSheet("""
                 QFrame#previewCard {
-                    background-color: #eceeff;
-                    border: 2px solid #6366f1;
+                    background-color: #1b2b25;
+                    border: 2px solid #65c5a6;
                     border-radius: 8px;
                 }
             """)
@@ -186,7 +197,7 @@ class LibraryImageRowWidget(QFrame):
 
         # Miniatura de la imagen
         self.thumb_lbl = QLabel()
-        self.thumb_lbl.setFixedSize(48, 36)
+        self.thumb_lbl.setFixedSize(176, 99)
         self.thumb_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumb_lbl.setStyleSheet("""
             background-color: #1a1a1e; 
@@ -197,9 +208,22 @@ class LibraryImageRowWidget(QFrame):
         # Cargar miniatura
         pixmap = QPixmap(file_path)
         if not pixmap.isNull():
-            scaled = pixmap.scaled(self.thumb_lbl.size(
-            ), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            self.image_dimensions = pixmap.size()
+            scaled = pixmap.scaled(
+                self.thumb_lbl.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
             self.thumb_lbl.setPixmap(scaled)
+            self.thumb_lbl.setToolTip(
+                f"{self.image_dimensions.width()} × {self.image_dimensions.height()} px")
+            image_details = (
+                f"{self.image_dimensions.width()} × "
+                f"{self.image_dimensions.height()} px · Imagen local"
+            )
+        else:
+            self.image_dimensions = QSize()
+            image_details = "Imagen local · Archivo no disponible"
         layout.addWidget(self.thumb_lbl)
 
         # Textos de título
@@ -211,7 +235,7 @@ class LibraryImageRowWidget(QFrame):
             "color: #fafafa; font-weight: bold; font-size: 14px; background: transparent;")
         text_layout.addWidget(self.title_lbl)
 
-        self.sub_lbl = QLabel("Imagen Local")
+        self.sub_lbl = QLabel(image_details)
         self.sub_lbl.setStyleSheet(
             "color: #a1a1aa; font-size: 11px; background: transparent;")
         text_layout.addWidget(self.sub_lbl)
@@ -228,7 +252,7 @@ class LibraryImageRowWidget(QFrame):
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
         # Botón eliminar
-        self.del_btn = QPushButton("🗑")
+        self.del_btn = QPushButton("×")
         self.del_btn.setFixedSize(30, 30)
         self.del_btn.setToolTip("Eliminar imagen")
         self.del_btn.setStyleSheet("""
@@ -252,6 +276,8 @@ class LibraryImageRowWidget(QFrame):
         # Botón para añadir al guión
         self.add_btn = QPushButton("+ Guión")
         self.add_btn.setObjectName("addToGuionBtn")
+        self.add_btn.setText("Agregar al Guion")
+        self.add_btn.setMinimumWidth(132)
         self.add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_btn.clicked.connect(on_add_clicked)
         layout.addWidget(self.add_btn)
@@ -301,7 +327,7 @@ class LibraryImageRowWidget(QFrame):
                     border: 1px solid #3f3f46;
                 }
             """)
-            self.add_btn.setText("+ Guión")
+            self.add_btn.setText("Agregar al Guion")
             self.add_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #2563eb;
@@ -383,7 +409,7 @@ class LibraryPptxRowWidget(QFrame):
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
         # Botón Eliminar
-        self.del_btn = QPushButton("🗑")
+        self.del_btn = QPushButton("×")
         self.del_btn.setFixedSize(30, 30)
         self.del_btn.setToolTip("Eliminar presentación")
         self.del_btn.setStyleSheet("""
@@ -482,8 +508,8 @@ class PreviewCardWidget(QFrame):
         self.setObjectName("previewCard")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 12, 15, 12)
-        layout.setSpacing(6)
+        layout.setContentsMargins(17, 15, 17, 15)
+        layout.setSpacing(8)
 
         self.header_label = QLabel(header)
         self.header_label.setObjectName("cardHeader")
@@ -500,44 +526,44 @@ class PreviewCardWidget(QFrame):
         if is_selected:
             self.setStyleSheet("""
                 QFrame#previewCard {
-                    background-color: #eceeff;
-                    border: 2px solid #6366f1;
+                    background-color: #1b2b25;
+                    border: 2px solid #65c5a6;
                     border-radius: 8px;
                 }
             """)
             self.header_label.setStyleSheet("""
-                color: #4f46e5;
-                font-size: 11px;
+                color: #70d7bd;
+                font-size: 12px;
                 font-weight: bold;
                 background: transparent;
             """)
             self.lyrics_label.setStyleSheet("""
-                color: #1e1b4b;
-                font-size: 13px;
+                color: #f5f5f4;
+                font-size: 15px;
                 font-weight: bold;
                 background: transparent;
             """)
         else:
             self.setStyleSheet("""
                 QFrame#previewCard {
-                    background-color: #202024;
-                    border: 1px solid #3a3a3c;
+                    background-color: #171d1b;
+                    border: 1px solid #29342f;
                     border-radius: 8px;
                 }
                 QFrame#previewCard:hover {
-                    background-color: #2e2e33;
-                    border: 1px solid #52525b;
+                    background-color: #1c2521;
+                    border: 1px solid #3b6658;
                 }
             """)
             self.header_label.setStyleSheet("""
-                color: #71717a;
-                font-size: 11px;
+                color: #9ba8a2;
+                font-size: 12px;
                 font-weight: bold;
                 background: transparent;
             """)
             self.lyrics_label.setStyleSheet("""
-                color: #e5e7eb;
-                font-size: 13px;
+                color: #e7ece9;
+                font-size: 15px;
                 font-weight: 600;
                 background: transparent;
             """)
@@ -559,10 +585,10 @@ class LibrarySongRowWidget(QFrame):
         self.icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_lbl.setFixedSize(36, 36)
         self.icon_lbl.setStyleSheet("""
-            background-color: #1e1b4b; 
-            color: #818cf8; 
-            border: 1px solid #3730a3;
-            border-radius: 18px; 
+            background-color: #202923;
+            color: #a9bbb2;
+            border: 1px solid #3a4b40;
+            border-radius: 6px;
             font-size: 15px;
             font-weight: bold;
         """)
@@ -616,7 +642,7 @@ class LibrarySongRowWidget(QFrame):
         layout.addWidget(self.edit_btn)
 
         # Botón Eliminar
-        self.del_btn = QPushButton("🗑")
+        self.del_btn = QPushButton("×")
         self.del_btn.setFixedSize(30, 30)
         self.del_btn.setToolTip("Eliminar canto")
         self.del_btn.setStyleSheet("""
@@ -708,11 +734,11 @@ class LibrarySongRowWidget(QFrame):
 
 
 class CleanProjectionWidget(QFrame):
-    """Widget de proyección OBS limpio que renderiza el contenido."""
+    """Vista previa nativa de la salida que renderiza el contenido proyectado."""
 
     def __init__(self, is_external=False, parent=None):
         super().__init__(parent)
-        self.setObjectName("obsContainerFrame")
+        self.setObjectName("projectionOutputFrame")
         # Establecer fondo transparente para que nuestro paintEvent controle el dibujado completo
         self.setStyleSheet(
             "background-color: transparent; border: none; border-radius: 0px;")
@@ -720,14 +746,14 @@ class CleanProjectionWidget(QFrame):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(20, 15, 20, 15)
 
-        # Línea superior (Etiqueta OBS + Botón de selección de pantallas)
+        # Encabezado de la salida local; las pantallas se administran en el panel lateral.
         top_layout = QHBoxLayout()
-        self.obs_title = QLabel("VENTANA OBS")
-        self.obs_title.setObjectName("obsLabelTitle")
-        top_layout.addWidget(self.obs_title)
+        self.projection_title = QLabel("PROYECCIÓN")
+        self.projection_title.setObjectName("projectionLabelTitle")
+        top_layout.addWidget(self.projection_title)
         top_layout.addStretch()
 
-        self.btn_screens = QPushButton("🖥 Pantallas ▾")
+        self.btn_screens = QPushButton("▣ Pantallas ▾")
         self.btn_screens.setObjectName("subtleCtrlBtn")
         self.btn_screens.setStyleSheet("padding: 2px 8px; font-size: 11px;")
         self.btn_screens.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -737,7 +763,11 @@ class CleanProjectionWidget(QFrame):
 
         main_layout.addLayout(top_layout)
 
-        main_layout.addStretch()
+        self.header_label = QLabel("")
+        self.header_label.setObjectName("projectionHeader")
+        self.header_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.header_label.hide()
+        main_layout.addWidget(self.header_label)
 
         # Texto central
         self.text_label = QLabel(self)
@@ -749,19 +779,24 @@ class CleanProjectionWidget(QFrame):
             font-weight: bold; 
             background: transparent;
         """)
-        main_layout.addWidget(self.text_label)
-
-        main_layout.addStretch()
+        main_layout.addWidget(self.text_label, stretch=1)
 
         # Línea inferior (Pie de página y ayuda)
         bottom_layout = QHBoxLayout()
         bottom_layout.addStretch()
 
         self.footer_label = QLabel("")
-        self.footer_label.setObjectName("obsFooterTitle")
+        self.footer_label.setObjectName("projectionFooterTitle")
+        self.footer_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         bottom_layout.addWidget(self.footer_label)
 
         bottom_layout.addStretch()
+
+        self.version_label = QLabel("")
+        self.version_label.setObjectName("projectionVersion")
+        self.version_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.version_label.hide()
+        bottom_layout.addWidget(self.version_label)
 
         self.help_btn = QPushButton("?")
         self.help_btn.setObjectName("helpRoundBtn")
@@ -772,17 +807,29 @@ class CleanProjectionWidget(QFrame):
         main_layout.addLayout(bottom_layout)
 
         self.is_external = is_external
+        self.current_display_mode = "standard"
+        self.current_verse_number = None
+        self.current_chapter_title = ""
+        self.current_plain_text = ""
+
+        # La miniatura ayuda a identificar imágenes en la vista local sin alterar la salida externa.
+        self.image_thumbnail_label = QLabel(self)
+        self.image_thumbnail_label.setObjectName("outputImageThumbnail")
+        self.image_thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_thumbnail_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.image_thumbnail_label.hide()
 
         # Ocultar controles administrativos en ventana externa
         if is_external:
-            self.obs_title.hide()
+            self.projection_title.hide()
             self.btn_screens.hide()
             self.help_btn.hide()
         else:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             self.setToolTip("Haz clic derecho o en 'Pantallas ▾' para proyectar en una o varias pantallas")
             self.text_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            self.obs_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            self.projection_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             self.footer_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
         self.raw_pixmap = None
@@ -801,12 +848,71 @@ class CleanProjectionWidget(QFrame):
         if w <= 0 or h <= 0:
             return
 
+        is_bible = getattr(self, "current_display_mode", "standard") == "bible"
+
+        if is_bible:
+            base_size = int(min(w * 0.042, h * 0.075))
+            length = len(self.current_plain_text)
+
+            if length > 260:
+                scale = 0.72
+            elif length > 180:
+                scale = 0.82
+            elif length > 110:
+                scale = 0.9
+            else:
+                scale = 1.0
+
+            offset = getattr(self, "font_size_offset", 0)
+            min_font_size = max(18, int(min(w * 0.025, h * 0.04)))
+            max_font_size = max(min_font_size, int(min(w * 0.075, h * 0.12)))
+            font_size = max(min_font_size, min(max_font_size, int(base_size * scale) + offset))
+            self.text_label.setStyleSheet(f"""
+                color: #f5efe6;
+                font-family: 'Times New Roman', Georgia, serif;
+                font-size: {font_size}px;
+                font-weight: 600;
+                line-height: 1.35;
+                background: transparent;
+            """)
+
+            header_font_size = max(20, int(min(w * 0.034, h * 0.06)))
+            self.header_label.setStyleSheet(f"""
+                color: #70d7bd;
+                font-family: 'Times New Roman', Georgia, serif;
+                font-size: {header_font_size}px;
+                font-weight: 700;
+                letter-spacing: 2px;
+                background: transparent;
+            """)
+
+            footer_font_size = max(14, int(h * 0.026))
+            self.footer_label.setStyleSheet(f"""
+                color: #d7b76d;
+                font-family: 'Times New Roman', Georgia, serif;
+                font-size: {footer_font_size}px;
+                font-style: italic;
+                font-weight: 500;
+                background: transparent;
+            """)
+            self.version_label.setStyleSheet(f"""
+                color: #cbd5d1;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: {max(12, int(h * 0.022))}px;
+                font-weight: 600;
+                background: transparent;
+            """)
+
+            margin_w = max(40, int(w * 0.08))
+            margin_h = max(30, int(h * 0.06))
+            self.layout().setContentsMargins(margin_w, margin_h, margin_w, margin_h)
+            return
+
         # Base font size: roughly 8.5% of height or 5.5% of width, whichever is smaller
         base_size = int(min(w * 0.055, h * 0.085))
 
         # Adaptive factor based on text length to prevent overflow
-        text = self.text_label.text()
-        length = len(text)
+        length = len(self.current_plain_text)
 
         if length > 200:
             scale = 0.65
@@ -817,9 +923,9 @@ class CleanProjectionWidget(QFrame):
         else:
             scale = 1.0
 
-        # Apply manual offset
         offset = getattr(self, "font_size_offset", 0)
-        font_size = max(16, int(base_size * scale) + offset)
+        max_font_size = max(18, int(min(w * 0.085, h * 0.13)))
+        font_size = max(16, min(max_font_size, int(base_size * scale) + offset))
 
         self.text_label.setStyleSheet(f"""
             color: #ffffff; 
@@ -828,7 +934,6 @@ class CleanProjectionWidget(QFrame):
             background: transparent;
         """)
 
-        # Responsive footer size
         footer_font_size = max(11, int(h * 0.022))
         self.footer_label.setStyleSheet(f"""
             color: #71717a;
@@ -837,35 +942,79 @@ class CleanProjectionWidget(QFrame):
             background: transparent;
         """)
 
-        # Responsive margins
         margin_w = max(20, int(w * 0.05))
         margin_h = max(15, int(h * 0.04))
         self.layout().setContentsMargins(margin_w, margin_h, margin_w, margin_h)
 
-    def display_text(self, text, slide_name="", song_title=""):
+    def display_text(self, text, slide_name="", song_title="", display_mode="standard", verse_number=None, chapter_title=""):
         self.is_black_screen = False
         self.raw_pixmap = None
-        self.text_label.setText(text)
-        self.text_label.show()
+        self.image_thumbnail_label.clear()
+        self.image_thumbnail_label.hide()
+        self.current_display_mode = display_mode
+        self.current_verse_number = verse_number
+        self.current_chapter_title = chapter_title
+        self.current_plain_text = text or ""
+        self.current_slide_name = slide_name
+        self.current_song_title = song_title
+
+        if display_mode == "bible":
+            self.header_label.setText(slide_name or "")
+            self.header_label.show()
+
+            verse_text = self.current_plain_text.strip()
+            if verse_number is not None and verse_text:
+                # Escapar el texto evita que signos del versículo se interpreten como HTML.
+                verse_text = (
+                    f"<sup><span style='color:#70d7bd;font-size:65%;font-weight:700'>"
+                    f"{escape_html(str(verse_number))}</span></sup>&nbsp;"
+                    f"{escape_html(verse_text)}"
+                )
+            else:
+                verse_text = escape_html(verse_text)
+            self.text_label.setText(f"<div>{verse_text}</div>")
+            self.text_label.show()
+            self.footer_label.setText(chapter_title or "")
+            self.footer_label.setVisible(bool(chapter_title))
+            self.version_label.setText(song_title or "")
+            self.version_label.setVisible(bool(song_title))
+        else:
+            self.header_label.hide()
+            self.text_label.setText(text)
+            self.text_label.show()
+            self.version_label.clear()
+            self.version_label.hide()
+
+            if self.current_slide_name and self.current_song_title:
+                self.footer_label.setText(f"{self.current_slide_name} · {self.current_song_title}")
+            else:
+                self.footer_label.setText(self.current_song_title or self.current_slide_name)
+            self.footer_label.show()
+
         self.adjust_font_size()
         self.update()
 
-        if song_title:
-            self.current_song_title = song_title
-        if slide_name:
-            self.current_slide_name = slide_name
-
-        if self.current_slide_name and self.current_song_title:
-            self.footer_label.setText(
-                f"{self.current_slide_name} · {self.current_song_title}")
-        else:
-            self.footer_label.setText(
-                self.current_song_title or self.current_slide_name)
-
     def display_image(self, pixmap_path, slide_name="", song_title=""):
         self.is_black_screen = False
+        self.current_display_mode = "standard"
+        self.current_verse_number = None
+        self.current_chapter_title = ""
+        self.current_plain_text = ""
+        self.header_label.hide()
+        self.version_label.clear()
+        self.version_label.hide()
         self.text_label.hide()
+        # Las imágenes ocupan la salida completa; no superponer títulos ni nombres.
+        self.footer_label.clear()
+        self.footer_label.hide()
         self.raw_pixmap = QPixmap(pixmap_path)
+        if not self.is_external and not self.raw_pixmap.isNull():
+            self._update_image_thumbnail()
+            self.image_thumbnail_label.show()
+            self.image_thumbnail_label.raise_()
+        else:
+            self.image_thumbnail_label.clear()
+            self.image_thumbnail_label.hide()
         self.update()
 
         if song_title:
@@ -873,29 +1022,57 @@ class CleanProjectionWidget(QFrame):
         if slide_name:
             self.current_slide_name = slide_name
 
-        if self.current_slide_name and self.current_song_title:
-            self.footer_label.setText(
-                f"{self.current_slide_name} · {self.current_song_title}")
-        else:
-            self.footer_label.setText(
-                self.current_song_title or self.current_slide_name)
 
     def set_black_screen(self):
         self.is_black_screen = True
+        self.current_display_mode = "standard"
+        self.current_verse_number = None
+        self.current_chapter_title = ""
+        self.current_plain_text = ""
+        self.header_label.hide()
+        self.image_thumbnail_label.clear()
+        self.image_thumbnail_label.hide()
         self.text_label.hide()
         self.raw_pixmap = None
         self.footer_label.setText("")
+        self.version_label.clear()
+        self.version_label.hide()
         self.update()
 
     def clear_text_only(self):
+        self.header_label.hide()
+        self.current_plain_text = ""
+        self.image_thumbnail_label.clear()
+        self.image_thumbnail_label.hide()
         self.text_label.setText("")
         self.footer_label.setText("")
+        self.version_label.clear()
+        self.version_label.hide()
         self.update()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.adjust_font_size()
+        if self.image_thumbnail_label.isVisible() and self.raw_pixmap:
+            self._update_image_thumbnail()
         self.update()
+
+    def _update_image_thumbnail(self):
+        """Escala y posiciona una miniatura dentro de la vista local."""
+        thumbnail_width = min(144, max(88, int(self.width() * 0.2)))
+        thumbnail_height = int(thumbnail_width * 9 / 16) + 8
+        self.image_thumbnail_label.setFixedSize(
+            thumbnail_width, thumbnail_height)
+        self.image_thumbnail_label.setPixmap(self.raw_pixmap.scaled(
+            thumbnail_width - 8,
+            thumbnail_height - 8,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        ))
+        margin = 14
+        top_offset = 42
+        self.image_thumbnail_label.move(
+            max(margin, self.width() - thumbnail_width - margin), top_offset)
 
     def paintEvent(self, event):
         from PyQt6.QtGui import QPainter
@@ -971,7 +1148,9 @@ class ProjectionWindow(QWidget):
     def __init__(self, close_callback=None):
         super().__init__()
         self.close_callback = close_callback
-        self.setWindowTitle("Salida de Proyección (F11: Pantalla Completa)")
+        self.setWindowTitle("Station Selah · Proyección")
+        if os.path.exists(LOGO_PATH):
+            self.setWindowIcon(QIcon(LOGO_PATH))
         self.setStyleSheet("background-color: #000000;")
         self.resize(800, 600)
 
@@ -1019,10 +1198,10 @@ class ProjectionWindow(QWidget):
 class SectionBlockWidget(QFrame):
     """Bloque individual de sección (Título, Estrofa, Coro) dentro del editor."""
     COLORS = {
-        "Título":   {"border": "#6366f1", "header_bg": "#1e1b4b", "header_fg": "#818cf8", "label": "#818cf8"},
-        "Estrofa":  {"border": "#3b82f6", "header_bg": "#172554", "header_fg": "#93c5fd", "label": "#93c5fd"},
-        "Coro":     {"border": "#a855f7", "header_bg": "#2e1065", "header_fg": "#d8b4fe", "label": "#d8b4fe"},
-        "Puente":   {"border": "#ec4899", "header_bg": "#4a044e", "header_fg": "#f9a8d4", "label": "#f9a8d4"},
+        "Título":   {"border": "#355346", "header_bg": "#20352b", "header_fg": "#92d8b2", "label": "#92d8b2"},
+        "Estrofa":  {"border": "#355346", "header_bg": "#20352b", "header_fg": "#92d8b2", "label": "#92d8b2"},
+        "Coro":     {"border": "#355346", "header_bg": "#20352b", "header_fg": "#92d8b2", "label": "#92d8b2"},
+        "Puente":   {"border": "#355346", "header_bg": "#20352b", "header_fg": "#92d8b2", "label": "#92d8b2"},
     }
 
     def __init__(self, section_type="Estrofa", number=1, content="", on_delete=None, parent=None):
@@ -1035,15 +1214,15 @@ class SectionBlockWidget(QFrame):
 
         self.setStyleSheet(f"""
             QFrame {{
-                background-color: #202024;
+                background-color: #151c19;
                 border: 1px solid {colors['border']};
-                border-radius: 8px;
+                border-radius: 6px;
             }}
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(6)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
 
         # Header row
         header_row = QHBoxLayout()
@@ -1122,15 +1301,15 @@ class SectionBlockWidget(QFrame):
         self.text_edit = QTextEdit()
         self.text_edit.setPlaceholderText("Escribe la letra aquí...")
         self.text_edit.setPlainText(content)
-        self.text_edit.setMinimumHeight(90)
-        self.text_edit.setMaximumHeight(160)
+        self.text_edit.setMinimumHeight(100)
+        self.text_edit.setMaximumHeight(190)
         self.text_edit.setStyleSheet("""
             QTextEdit {
-                background-color: #18181b;
+                background-color: #101513;
                 color: #f4f4f5;
-                border: none;
+                border: 1px solid #29352f;
                 border-radius: 4px;
-                padding: 8px;
+                padding: 10px;
                 font-size: 13px;
             }
         """)
@@ -1203,27 +1382,26 @@ class SongEditorDialog(QDialog):
         self.section_widgets = []
 
         self.setWindowTitle("Nuevo Canto" if not song_id else "Editar Canto")
-        self.setMinimumSize(620, 700)
+        self.setObjectName("songEditorDialog")
+        self.setMinimumSize(900, 620)
+        self.resize(1080, 720)
         self.setStyleSheet("""
-            QDialog {
-                background-color: #0f0f11;
+            QDialog#songEditorDialog { background-color: #101614; }
+            QLabel { color: #9aa8a0; background: transparent; }
+            QLineEdit, QComboBox {
+                background-color: #171f1b;
+                border: 1px solid #304038;
+                border-radius: 5px;
+                color: #edf3ef;
+                padding: 9px 11px;
+                font-size: 12px;
             }
-            QLabel {
-                color: #a1a1aa;
-                font-size: 11px;
-                font-weight: bold;
-                background: transparent;
-            }
-            QLineEdit {
-                background-color: #27272a;
-                border: 1px solid #3f3f46;
-                border-radius: 8px;
-                color: #ffffff;
-                padding: 10px 14px;
-                font-size: 14px;
-            }
-            QLineEdit:focus {
-                border: 1px solid #6366f1;
+            QLineEdit:focus, QComboBox:focus { border-color: #5da98c; }
+            QComboBox::drop-down { border: none; width: 22px; }
+            QComboBox QAbstractItemView {
+                background-color: #171f1b;
+                color: #edf3ef;
+                selection-background-color: #244235;
             }
             QScrollArea {
                 border: none;
@@ -1242,150 +1420,225 @@ class SongEditorDialog(QDialog):
         """)
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(14)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # Título del canto
-        lbl_title = QLabel("TÍTULO DEL CANTO")
-        main_layout.addWidget(lbl_title)
+        # Encabezado del editor.
+        header = QFrame()
+        header.setObjectName("songEditorHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(20, 14, 20, 12)
+        header_layout.setSpacing(12)
+
+        icon = QLabel("✎" if song_id else "+")
+        icon.setObjectName("songEditorIcon")
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setFixedSize(34, 34)
+        header_layout.addWidget(icon)
+
+        header_text = QVBoxLayout()
+        header_text.setSpacing(2)
+        eyebrow = QLabel("BIBLIOTECA DE CANTOS")
+        eyebrow.setObjectName("songEditorEyebrow")
+        header_text.addWidget(eyebrow)
+        dialog_title = QLabel("Editar canto" if song_id else "Agregar canto")
+        dialog_title.setObjectName("songEditorTitle")
+        header_text.addWidget(dialog_title)
+        header_layout.addLayout(header_text)
+        header_layout.addStretch()
+
+        close_btn = QPushButton("×")
+        close_btn.setObjectName("songEditorCloseBtn")
+        close_btn.setFixedSize(32, 32)
+        close_btn.setToolTip("Cerrar")
+        close_btn.clicked.connect(self.reject)
+        header_layout.addWidget(close_btn)
+        main_layout.addWidget(header)
+
+        # Campos principales en una sola fila, como en la referencia.
+        meta_panel = QFrame()
+        meta_panel.setObjectName("songEditorMeta")
+        meta_row = QHBoxLayout(meta_panel)
+        meta_row.setContentsMargins(20, 12, 20, 14)
+        meta_row.setSpacing(10)
 
         self.title_input = QLineEdit()
         self.title_input.setPlaceholderText("Ej. A Dios sea la Gloria")
-        main_layout.addWidget(self.title_input)
+        self.author_input = QLineEdit()
+        self.author_input.setPlaceholderText("Nombre del autor")
 
-        # Fila: Categoría y Tono
-        meta_row = QHBoxLayout()
-        meta_row.setSpacing(10)
+        self.category_input = QComboBox()
+        self.category_input.setEditable(True)
+        self.category_input.addItems(["Alabanza", "Adoración", "Himno"])
+        self.category_input.setCurrentText("Adoración")
 
-        left_col = QVBoxLayout()
-        lbl_cat = QLabel("CATEGORÍA")
-        self.category_input = QLineEdit()
-        self.category_input.setPlaceholderText(
-            "Ej. Alabanza, Adoración, Himno")
-        left_col.addWidget(lbl_cat)
-        left_col.addWidget(self.category_input)
-        meta_row.addLayout(left_col)
-
-        right_col = QVBoxLayout()
-        lbl_tone = QLabel("TONO")
         self.tone_input = QLineEdit()
-        self.tone_input.setPlaceholderText("Ej. G, Am, F#")
-        self.tone_input.setMaximumWidth(120)
-        right_col.addWidget(lbl_tone)
-        right_col.addWidget(self.tone_input)
-        meta_row.addLayout(right_col)
+        self.tone_input.setPlaceholderText("Ej. Sol")
 
-        main_layout.addLayout(meta_row)
+        for label, control, stretch in (
+            ("TÍTULO DEL CANTO", self.title_input, 3),
+            ("AUTOR", self.author_input, 2),
+            ("CATEGORÍA", self.category_input, 1),
+            ("TONO", self.tone_input, 1),
+        ):
+            field = QVBoxLayout()
+            field.setSpacing(5)
+            field_label = QLabel(label)
+            field_label.setObjectName("songEditorFieldLabel")
+            field.addWidget(field_label)
+            field.addWidget(control)
+            meta_row.addLayout(field, stretch=stretch)
+        main_layout.addWidget(meta_panel)
 
-        # Separador
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("background-color: #27272a; max-height: 1px;")
+        sep.setStyleSheet("background-color: #29352f; max-height: 1px;")
         main_layout.addWidget(sep)
 
-        # Label secciones
-        sections_header = QHBoxLayout()
-        lbl_sections = QLabel("SECCIONES")
-        sections_header.addWidget(lbl_sections)
-        sections_header.addStretch()
-        main_layout.addLayout(sections_header)
+        # Editor de secciones y preview en columnas independientes.
+        body = QWidget()
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(20, 14, 20, 14)
+        body_layout.setSpacing(16)
 
-        # Scroll area para los bloques
+        editor_column = QWidget()
+        editor_layout = QVBoxLayout(editor_column)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(10)
+
+        sections_header = QHBoxLayout()
+        section_heading = QVBoxLayout()
+        section_heading.setSpacing(2)
+        section_kicker = QLabel("ESTRUCTURA")
+        section_kicker.setObjectName("songEditorEyebrow")
+        section_heading.addWidget(section_kicker)
+        section_title = QLabel("Secciones del canto")
+        section_title.setObjectName("songEditorSectionTitle")
+        section_heading.addWidget(section_title)
+        sections_header.addLayout(section_heading)
+        sections_header.addStretch()
+        self.section_count_label = QLabel("0 bloques")
+        self.section_count_label.setObjectName("songEditorCount")
+        sections_header.addWidget(self.section_count_label)
+        editor_layout.addLayout(sections_header)
+
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setObjectName("songSectionsScroll")
 
         self.sections_container = QWidget()
         self.sections_container.setStyleSheet("background: transparent;")
         self.sections_layout = QVBoxLayout(self.sections_container)
-        self.sections_layout.setContentsMargins(0, 0, 8, 0)
-        self.sections_layout.setSpacing(8)
+        self.sections_layout.setContentsMargins(0, 2, 8, 2)
+        self.sections_layout.setSpacing(10)
         self.sections_layout.addStretch()
 
         self.scroll_area.setWidget(self.sections_container)
-        main_layout.addWidget(self.scroll_area, stretch=1)
+        editor_layout.addWidget(self.scroll_area, stretch=1)
 
-        # Botones para agregar secciones
+        # Atajos para insertar tipos comunes de sección.
         add_row = QHBoxLayout()
-        add_row.setSpacing(8)
+        add_row.setSpacing(7)
+        add_label = QLabel("AGREGAR")
+        add_label.setObjectName("songEditorFieldLabel")
+        add_row.addWidget(add_label)
 
         for label, sec_type in [("+ Título", "Título"), ("+ Estrofa", "Estrofa"), ("+ Coro", "Coro"), ("+ Puente", "Puente")]:
-            colors = SectionBlockWidget.COLORS.get(
-                sec_type, SectionBlockWidget.COLORS["Estrofa"])
             btn = QPushButton(label)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {colors['header_bg']};
-                    color: {colors['header_fg']};
-                    border: 1px solid {colors['border']};
-                    border-radius: 14px;
-                    padding: 6px 14px;
-                    font-size: 11px;
-                    font-weight: bold;
-                }}
-                QPushButton:hover {{
-                    background-color: {colors['border']};
-                    color: #ffffff;
-                }}
-            """)
+            btn.setObjectName("songEditorAddSectionBtn")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(
                 lambda checked, st=sec_type: self.add_section(st))
             add_row.addWidget(btn)
 
         add_row.addStretch()
-        main_layout.addLayout(add_row)
+        editor_layout.addLayout(add_row)
+        body_layout.addWidget(editor_column, stretch=7)
 
-        # Botones guardar/cancelar
+        preview_panel = QFrame()
+        preview_panel.setObjectName("songEditorPreviewPanel")
+        preview_layout = QVBoxLayout(preview_panel)
+        preview_layout.setContentsMargins(14, 14, 14, 14)
+        preview_layout.setSpacing(10)
+
+        preview_heading = QVBoxLayout()
+        preview_heading.setSpacing(2)
+        preview_kicker = QLabel("VISTA PREVIA")
+        preview_kicker.setObjectName("songEditorEyebrow")
+        preview_heading.addWidget(preview_kicker)
+        preview_subtitle = QLabel("Así se proyectará")
+        preview_subtitle.setObjectName("songEditorSectionTitle")
+        preview_heading.addWidget(preview_subtitle)
+        preview_layout.addLayout(preview_heading)
+
+        self.preview_canvas = QFrame()
+        self.preview_canvas.setObjectName("songPreviewCanvas")
+        self.preview_canvas.setMinimumHeight(220)
+        self.preview_canvas.setMaximumHeight(340)
+        canvas_layout = QVBoxLayout(self.preview_canvas)
+        canvas_layout.setContentsMargins(20, 20, 20, 20)
+        canvas_layout.addStretch()
+
+        self.preview_section_label = QLabel("ESTROFA 1")
+        self.preview_section_label.setObjectName("songPreviewSection")
+        self.preview_section_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        canvas_layout.addWidget(self.preview_section_label)
+
+        self.preview_lyrics_label = QLabel("La letra aparecerá aquí mientras escribes.")
+        self.preview_lyrics_label.setObjectName("songPreviewLyrics")
+        self.preview_lyrics_label.setWordWrap(True)
+        self.preview_lyrics_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        canvas_layout.addWidget(self.preview_lyrics_label)
+        canvas_layout.addStretch()
+
+        self.preview_song_title = QLabel("TÍTULO DEL CANTO")
+        self.preview_song_title.setObjectName("songPreviewFooter")
+        self.preview_song_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        canvas_layout.addWidget(self.preview_song_title)
+        preview_layout.addWidget(self.preview_canvas)
+        preview_layout.addStretch()
+        body_layout.addWidget(preview_panel, stretch=4)
+        main_layout.addWidget(body, stretch=1)
+
+        # Pie fijo para las acciones principales.
+        footer = QFrame()
+        footer.setObjectName("songEditorFooter")
         bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(20, 12, 20, 12)
         bottom_row.setSpacing(10)
+        footer_note = QLabel("Los cambios se guardarán en tu biblioteca local.")
+        footer_note.setObjectName("songEditorCount")
+        bottom_row.addWidget(footer_note)
         bottom_row.addStretch()
 
         cancel_btn = QPushButton("Cancelar")
-        cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #27272a;
-                color: #a1a1aa;
-                border: 1px solid #3f3f46;
-                border-radius: 8px;
-                padding: 10px 24px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #3f3f46; color: #fff; }
-        """)
+        cancel_btn.setObjectName("songEditorCancelBtn")
         cancel_btn.clicked.connect(self.reject)
         bottom_row.addWidget(cancel_btn)
 
-        save_btn = QPushButton("💾  Guardar Canto")
-        save_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4f46e5;
-                color: #ffffff;
-                border: 1px solid #6366f1;
-                border-radius: 8px;
-                padding: 10px 24px;
-                font-weight: bold;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #6366f1;
-                border: 1px solid #818cf8;
-            }
-        """)
-        save_btn.clicked.connect(self.save_song)
-        bottom_row.addWidget(save_btn)
+        self.save_btn = QPushButton("✓  Guardar cambios" if song_id else "✓  Agregar canto")
+        self.save_btn.setObjectName("songEditorSaveBtn")
+        self.save_btn.clicked.connect(self.save_song)
+        bottom_row.addWidget(self.save_btn)
+        footer.setLayout(bottom_row)
+        main_layout.addWidget(footer)
 
-        main_layout.addLayout(bottom_row)
+        self.title_input.textChanged.connect(
+            lambda text: self.save_btn.setEnabled(bool(text.strip())))
+        self.title_input.textChanged.connect(self.update_song_preview)
+        self.category_input.currentTextChanged.connect(
+            self.update_song_preview)
 
-        # Si es edición, cargar datos
         if self.song_id:
             self._load_existing_song()
         else:
-            # Bloques por defecto
             self.add_section("Título")
             self.add_section("Estrofa")
             self.add_section("Coro")
+        self.save_btn.setEnabled(bool(self.title_input.text().strip()))
+        self.update_song_preview()
 
     def add_section(self, sec_type="Estrofa", number=1, content=""):
         existing = [
@@ -1403,6 +1656,15 @@ class SongEditorDialog(QDialog):
         idx = self.sections_layout.count() - 1
         self.sections_layout.insertWidget(idx, block)
         self.section_widgets.append(block)
+        block.text_edit.textChanged.connect(
+            lambda section=block: self.update_song_preview(section))
+        block.type_combo.currentTextChanged.connect(
+            lambda _, section=block: self.update_song_preview(section))
+        block.num_combo.currentTextChanged.connect(
+            lambda _, section=block: self.update_song_preview(section))
+        self.section_count_label.setText(
+            f"{len(self.section_widgets)} bloques")
+        self.update_song_preview(block)
 
         QTimer.singleShot(50, lambda: self.scroll_area.verticalScrollBar().setValue(
             self.scroll_area.verticalScrollBar().maximum()
@@ -1412,19 +1674,47 @@ class SongEditorDialog(QDialog):
         self.sections_layout.removeWidget(block)
         self.section_widgets.remove(block)
         block.deleteLater()
+        self.section_count_label.setText(
+            f"{len(self.section_widgets)} bloques")
+        self.update_song_preview()
+
+    def update_song_preview(self, preferred_section=None):
+        """Actualiza el canvas de proyección con la sección editada."""
+        selected_section = preferred_section
+        if selected_section not in self.section_widgets:
+            selected_section = next(
+                (section for section in self.section_widgets
+                 if section.text_edit.toPlainText().strip()),
+                self.section_widgets[0] if self.section_widgets else None,
+            )
+
+        if selected_section:
+            section_label, section_text = selected_section.get_data()
+            self.preview_section_label.setText(section_label.upper())
+            self.preview_lyrics_label.setText(
+                section_text or "La letra aparecerá aquí mientras escribes.")
+        else:
+            self.preview_section_label.setText("SECCIÓN")
+            self.preview_lyrics_label.setText(
+                "La letra aparecerá aquí mientras escribes.")
+
+        self.preview_song_title.setText(
+            self.title_input.text().strip().upper() or "TÍTULO DEL CANTO")
 
     def _load_existing_song(self):
         conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT title, category, tone, lyrics FROM songs WHERE id = ?", (self.song_id,))
+            "SELECT title, category, tone, lyrics, author FROM songs WHERE id = ?",
+            (self.song_id,))
         row = cursor.fetchone()
         conn.close()
         if not row:
             return
-        title, category, tone, lyrics = row
+        title, category, tone, lyrics, author = row
         self.title_input.setText(title or "")
-        self.category_input.setText(category or "")
+        self.author_input.setText(author or "")
+        self.category_input.setCurrentText(category or "")
         self.tone_input.setText(tone or "")
 
         slides = [s.strip() for s in lyrics.split("\n\n") if s.strip()]
@@ -1456,7 +1746,8 @@ class SongEditorDialog(QDialog):
                                 "Agrega al menos una sección al canto.")
             return
 
-        category = self.category_input.text().strip()
+        category = self.category_input.currentText().strip()
+        author = self.author_input.text().strip()
         tone = self.tone_input.text().strip()
 
         parts = []
@@ -1478,28 +1769,33 @@ class SongEditorDialog(QDialog):
 
         if self.song_id:
             cursor.execute(
-                "UPDATE songs SET title=?, category=?, tone=?, lyrics=? WHERE id=?",
-                (title, category, tone, lyrics, self.song_id)
+                "UPDATE songs SET title=?, category=?, tone=?, lyrics=?, author=? WHERE id=?",
+                (title, category, tone, lyrics, author, self.song_id)
             )
         else:
             cursor.execute(
-                "INSERT INTO songs (title, category, tone, lyrics) VALUES (?, ?, ?, ?)",
-                (title, category, tone, lyrics)
+                "INSERT INTO songs (title, category, tone, lyrics, author) VALUES (?, ?, ?, ?, ?)",
+                (title, category, tone, lyrics, author)
             )
         conn.commit()
         conn.close()
         self.accept()
 
 
+# ---------------------------------------------------------------------------
+# Main window and UI bootstrap
+# ---------------------------------------------------------------------------
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Cerebro de Proyección Multimedia - Iglesia App")
+        self.setWindowTitle("Station Selah")
+        if os.path.exists(LOGO_PATH):
+            self.setWindowIcon(QIcon(LOGO_PATH))
         self.resize(1200, 750)
 
         self.load_styles()
 
-        # Datos del Guion (en memoria para la sesión)
+        # Session state
         self.guion = {
             "songs": [],
             "bible": [],
@@ -1507,14 +1803,14 @@ class MainWindow(QMainWindow):
             "pptx": []
         }
 
-        # Estado de la proyección (Soporte multipantalla ilimitado)
+        # Projection state
         self.active_item_data = None
-        self.projection_windows = {}      # {QScreen: ProjectionWindow}
+        self.projection_windows = {}
         self._is_external_obs_mode = False
 
-        # Timer que verifica si las pantallas asignadas siguen conectadas
+        # Screen monitoring timer
         self._screen_monitor_timer = QTimer()
-        self._screen_monitor_timer.setInterval(2000)  # cada 2 segundos
+        self._screen_monitor_timer.setInterval(2000)
         self._screen_monitor_timer.timeout.connect(self._check_screens_connected)
         self._screen_monitor_timer.start()
         self.external_font_size_offset = 0
@@ -1525,6 +1821,9 @@ class MainWindow(QMainWindow):
         self.last_projected_header = ""
         self.last_projected_song_title = ""
         self.last_projected_image_path = ""
+        self.last_projected_display_mode = "standard"
+        self.last_projected_verse_number = None
+        self.last_projected_chapter_title = ""
 
         self.setup_ui()
         self.load_songs_library()
@@ -1532,33 +1831,34 @@ class MainWindow(QMainWindow):
         self.load_pptx_library()
         self.load_persisted_lyrics_bg()
 
-        # Atajo ESC → pantalla negra en todas las ventanas externas
         esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         esc_shortcut.activated.connect(self.project_black)
 
     def load_styles(self):
+        """Loads the app stylesheet from the packaged or local project directory."""
         candidates = []
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        if is_frozen_app() and hasattr(sys, "_MEIPASS"):
             candidates.append(os.path.join(sys._MEIPASS, "styles.qss"))
         candidates.append(os.path.join(PROJECT_DIR, "styles.qss"))
         candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "styles.qss"))
 
         qss_content = ""
         for qss_path in candidates:
-            if os.path.exists(qss_path):
-                try:
-                    with open(qss_path, "r", encoding="utf-8") as f:
-                        qss_content = f.read()
-                    if qss_content:
-                        break
-                except Exception as e:
-                    print(f"Error cargando stylesheet desde {qss_path}: {e}")
+            if not os.path.exists(qss_path):
+                continue
+            try:
+                with open(qss_path, "r", encoding="utf-8") as file:
+                    qss_content = file.read()
+                if qss_content:
+                    break
+            except Exception as exc:
+                print(f"Error cargando stylesheet desde {qss_path}: {exc}")
 
         if qss_content:
             self.setStyleSheet(qss_content)
-            app_inst = QApplication.instance()
-            if app_inst:
-                app_inst.setStyleSheet(qss_content)
+            app_instance = QApplication.instance()
+            if app_instance:
+                app_instance.setStyleSheet(qss_content)
 
     def setup_ui(self):
         main_widget = QWidget()
@@ -1576,13 +1876,47 @@ class MainWindow(QMainWindow):
         top_bar_layout.setContentsMargins(15, 0, 15, 0)
         top_bar_layout.setSpacing(10)
 
+        # Identidad de la aplicación junto al símbolo de marca.
+        brand = QWidget()
+        brand.setObjectName("appBrand")
+        brand_layout = QHBoxLayout(brand)
+        brand_layout.setContentsMargins(0, 0, 12, 0)
+        brand_layout.setSpacing(8)
+
+        brand_icon = QLabel()
+        brand_icon.setObjectName("appBrandIcon")
+        brand_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_icon.setFixedSize(34, 34)
+        logo_pixmap = QPixmap(LOGO_PATH) if os.path.exists(LOGO_PATH) else QPixmap()
+        if not logo_pixmap.isNull():
+            brand_icon.setPixmap(logo_pixmap.scaled(
+                28, 28,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
+        else:
+            brand_icon.setText("S")
+        brand_layout.addWidget(brand_icon)
+
+        brand_text = QVBoxLayout()
+        brand_text.setContentsMargins(0, 0, 0, 0)
+        brand_text.setSpacing(0)
+        brand_station = QLabel("STATION")
+        brand_station.setObjectName("appBrandStation")
+        brand_name = QLabel("SELAH")
+        brand_name.setObjectName("appBrandName")
+        brand_text.addWidget(brand_station)
+        brand_text.addWidget(brand_name)
+        brand_layout.addLayout(brand_text)
+        top_bar_layout.addWidget(brand)
+
         self.nav_buttons = {}
         nav_items = [
             ("Cantos", "♫"),
-            ("Biblias", "📖"),
-            ("Imágenes", "🖼"),
-            ("PPTX", "🖥"),
-            ("Guión", "📋")
+            ("Biblias", "▤"),
+            ("Imágenes", "▧"),
+            ("PPTX", "▣"),
+            ("Guión", "☷")
         ]
 
         for name, icon in nav_items:
@@ -1599,7 +1933,7 @@ class MainWindow(QMainWindow):
         self.topbar_bible_search = QLineEdit()
         self.topbar_bible_search.setObjectName("searchBar")
         self.topbar_bible_search.setPlaceholderText(
-            "🔎 Buscar cita (ej. Juan 3 16) y Enter...")
+            "Buscar cita (ej. Juan 3 16) y Enter...")
         self.topbar_bible_search.setMinimumWidth(320)
         self.topbar_bible_search.setMaximumWidth(480)
         self.topbar_bible_search.setMaximumHeight(34)
@@ -1652,99 +1986,9 @@ class MainWindow(QMainWindow):
         self.preview_list.itemClicked.connect(self.on_preview_card_clicked)
         preview_layout.addWidget(self.preview_list)
 
-        # Controles del operador
-        divider = QFrame()
-        divider.setFrameShape(QFrame.Shape.HLine)
-        divider.setFrameShadow(QFrame.Shadow.Sunken)
-        divider.setStyleSheet(
-            "background-color: #27272a; max-height: 1px; margin: 10px 0px;")
-        preview_layout.addWidget(divider)
-
-        controls_layout = QHBoxLayout()
-        controls_layout.setSpacing(6)
-
-        self.btn_clear_black = QPushButton("Negro (Black)")
-        self.btn_clear_black.setObjectName("subtleCtrlBtnDanger")
-        self.btn_clear_black.clicked.connect(self.project_black)
-        controls_layout.addWidget(self.btn_clear_black)
-
-        self.btn_clear_text = QPushButton("Limpiar Letra")
-        self.btn_clear_text.setObjectName("subtleCtrlBtn")
-        self.btn_clear_text.clicked.connect(self.project_clear_text)
-        controls_layout.addWidget(self.btn_clear_text)
-
-        self.btn_restore = QPushButton("Restaurar")
-        self.btn_restore.setObjectName("subtleCtrlBtn")
-        self.btn_restore.clicked.connect(self.project_restore)
-        controls_layout.addWidget(self.btn_restore)
-
-        self.btn_lyrics_bg = QPushButton("Fondo Letra")
-        self.btn_lyrics_bg.setObjectName("subtleCtrlBtn")
-        self.btn_lyrics_bg.clicked.connect(self.change_lyrics_background)
-        controls_layout.addWidget(self.btn_lyrics_bg)
-
-        preview_layout.addLayout(controls_layout)
-
-        # Accesos rápidos de imágenes (Bienvenida / Despedida)
-        quick_controls_layout = QHBoxLayout()
-        quick_controls_layout.setSpacing(6)
-
-        lbl_quick_title = QLabel("Acceso Rápido:")
-        lbl_quick_title.setStyleSheet("color: #a1a1aa; font-weight: bold; font-size: 11px; background: transparent;")
-        quick_controls_layout.addWidget(lbl_quick_title)
-        quick_controls_layout.addStretch()
-
-        self.btn_quick_bienvenida = QPushButton("Bienvenida")
-        self.btn_quick_bienvenida.setObjectName("subtleCtrlBtn")
-        self.btn_quick_bienvenida.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_quick_bienvenida.setToolTip("Clic: Proyectar Bienvenida\nClic derecho: Cambiar / Configurar imagen")
-        self.btn_quick_bienvenida.clicked.connect(lambda: self.project_quick_image("bienvenida", "Bienvenida"))
-        self.btn_quick_bienvenida.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.btn_quick_bienvenida.customContextMenuRequested.connect(
-            lambda pos: self.show_quick_image_menu("bienvenida", "Bienvenida", self.btn_quick_bienvenida.mapToGlobal(pos)))
-        quick_controls_layout.addWidget(self.btn_quick_bienvenida)
-
-        self.btn_quick_despedida = QPushButton("Despedida")
-        self.btn_quick_despedida.setObjectName("subtleCtrlBtn")
-        self.btn_quick_despedida.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_quick_despedida.setToolTip("Clic: Proyectar Despedida\nClic derecho: Cambiar / Configurar imagen")
-        self.btn_quick_despedida.clicked.connect(lambda: self.project_quick_image("despedida", "Despedida"))
-        self.btn_quick_despedida.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.btn_quick_despedida.customContextMenuRequested.connect(
-            lambda pos: self.show_quick_image_menu("despedida", "Despedida", self.btn_quick_despedida.mapToGlobal(pos)))
-        quick_controls_layout.addWidget(self.btn_quick_despedida)
-
-        preview_layout.addLayout(quick_controls_layout)
-
-        # Controles de tamaño de fuente
-        font_controls_layout = QHBoxLayout()
-        font_controls_layout.setSpacing(6)
-
-        lbl_font_title = QLabel("Tamaño de Letra:")
-        lbl_font_title.setStyleSheet("color: #a1a1aa; font-weight: bold; font-size: 11px; background: transparent;")
-        font_controls_layout.addWidget(lbl_font_title)
-        font_controls_layout.addStretch()
-
-        self.btn_font_up = QPushButton("Aumentar (+)")
-        self.btn_font_up.setObjectName("subtleCtrlBtn")
-        self.btn_font_up.clicked.connect(self.increase_font_size)
-        font_controls_layout.addWidget(self.btn_font_up)
-
-        self.btn_font_down = QPushButton("Reducir (-)")
-        self.btn_font_down.setObjectName("subtleCtrlBtn")
-        self.btn_font_down.clicked.connect(self.decrease_font_size)
-        font_controls_layout.addWidget(self.btn_font_down)
-
-        self.btn_font_reset = QPushButton("Restablecer")
-        self.btn_font_reset.setObjectName("subtleCtrlBtn")
-        self.btn_font_reset.clicked.connect(self.reset_font_size)
-        font_controls_layout.addWidget(self.btn_font_reset)
-
-        preview_layout.addLayout(font_controls_layout)
-
         splitter.addWidget(preview_container)
 
-        # ---- Panel Derecho: Biblioteca Stacked + Ventana OBS ----
+        # ---- Panel Derecho: Biblioteca y salida de proyección ----
         self.right_splitter = QSplitter(Qt.Orientation.Vertical)
         self.right_splitter.setObjectName("rightSplitter")
         self.right_splitter.setChildrenCollapsible(False)
@@ -1760,18 +2004,149 @@ class MainWindow(QMainWindow):
 
         self.right_splitter.addWidget(self.library_stack)
 
-        # Panel Inferior: Ventana OBS Limpia y Más Grande
+        # Panel Inferior: vista de salida y controles nativos
         self.obs_container = QFrame()
-        self.obs_container.setObjectName("obsContainerFrame")
-        self.obs_container.setStyleSheet("background-color: #000000;")
-        self.obs_container.setMinimumHeight(320)
+        self.obs_container.setObjectName("projectionWorkspaceFrame")
+        self.obs_container.setMinimumHeight(340)
 
-        obs_layout = QVBoxLayout(self.obs_container)
-        obs_layout.setContentsMargins(0, 0, 0, 0)
-        obs_layout.setSpacing(0)
+        obs_layout = QHBoxLayout(self.obs_container)
+        obs_layout.setContentsMargins(8, 8, 8, 8)
+        obs_layout.setSpacing(8)
 
         self.local_projection_widget = CleanProjectionWidget(is_external=False)
+        self.local_projection_widget.btn_screens.hide()
         obs_layout.addWidget(self.local_projection_widget)
+
+        # Los controles viven junto a la salida para dejar más espacio a los bloques de Preview.
+        self.projection_controls_panel = QFrame()
+        self.projection_controls_panel.setObjectName("projectionControlPanel")
+        self.projection_controls_panel.setFixedWidth(205)
+        controls_panel_layout = QVBoxLayout(self.projection_controls_panel)
+        controls_panel_layout.setContentsMargins(12, 12, 12, 12)
+        controls_panel_layout.setSpacing(6)
+
+        outputs_title = QLabel("SALIDAS")
+        outputs_title.setObjectName("projectionSectionLabel")
+        controls_panel_layout.addWidget(outputs_title)
+
+        self.projection_output_rows = {}
+        projection_outputs_container = QWidget()
+        projection_outputs_container.setObjectName("projectionOutputsContainer")
+        self.projection_outputs_layout = QVBoxLayout(projection_outputs_container)
+        self.projection_outputs_layout.setContentsMargins(0, 0, 0, 0)
+        self.projection_outputs_layout.setSpacing(6)
+        controls_panel_layout.addWidget(projection_outputs_container)
+
+        controls_divider = QFrame()
+        controls_divider.setFrameShape(QFrame.Shape.HLine)
+        controls_divider.setObjectName("projectionControlsDivider")
+        controls_panel_layout.addWidget(controls_divider)
+
+        controls_title = QLabel("CONTROLES")
+        controls_title.setObjectName("projectionSectionLabel")
+        controls_panel_layout.addWidget(controls_title)
+
+        self.btn_clear_black = QPushButton("Pantalla negra")
+        self.btn_clear_black.setObjectName("projectionDangerBtn")
+        self.btn_clear_black.setToolTip("Poner todas las salidas en negro")
+        self.btn_clear_black.clicked.connect(self.project_black)
+        controls_panel_layout.addWidget(self.btn_clear_black)
+
+        # Las tres acciones secundarias se mantienen juntas como botones tipo tarjeta.
+        action_row = QHBoxLayout()
+        action_row.setSpacing(6)
+        self.btn_clear_text = QToolButton()
+        self.btn_clear_text.setText("Limpiar")
+        self.btn_clear_text.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
+        self.btn_clear_text.setIconSize(QSize(18, 18))
+        self.btn_clear_text.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        self.btn_clear_text.setObjectName("projectionTileBtn")
+        self.btn_clear_text.setToolTip("Ocultar el texto proyectado")
+        self.btn_clear_text.clicked.connect(self.project_clear_text)
+        action_row.addWidget(self.btn_clear_text)
+
+        self.btn_restore = QToolButton()
+        self.btn_restore.setText("Restaurar")
+        self.btn_restore.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
+        self.btn_restore.setIconSize(QSize(18, 18))
+        self.btn_restore.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        self.btn_restore.setObjectName("projectionTileBtn")
+        self.btn_restore.setToolTip("Restaurar el último contenido proyectado")
+        self.btn_restore.clicked.connect(self.project_restore)
+        action_row.addWidget(self.btn_restore)
+
+        self.btn_lyrics_bg = QToolButton()
+        self.btn_lyrics_bg.setText("Fondo")
+        self.btn_lyrics_bg.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DesktopIcon))
+        self.btn_lyrics_bg.setIconSize(QSize(18, 18))
+        self.btn_lyrics_bg.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        self.btn_lyrics_bg.setObjectName("projectionTileBtn")
+        self.btn_lyrics_bg.setToolTip("Cambiar el fondo de la proyección")
+        self.btn_lyrics_bg.clicked.connect(self.change_lyrics_background)
+        action_row.addWidget(self.btn_lyrics_bg)
+        controls_panel_layout.addLayout(action_row)
+
+        font_controls_row = QHBoxLayout()
+        font_controls_row.setSpacing(5)
+        font_title = QLabel("T")
+        font_title.setObjectName("projectionSectionLabel")
+        font_title.setToolTip("Tamaño de letra")
+        font_controls_row.addWidget(font_title)
+
+        self.btn_font_down = QPushButton("−")
+        self.btn_font_down.setObjectName("fontStepBtn")
+        self.btn_font_down.setToolTip("Reducir tamaño de letra")
+        self.btn_font_down.clicked.connect(self.decrease_font_size)
+        font_controls_row.addWidget(self.btn_font_down)
+
+        self.btn_font_reset = QPushButton("M")
+        self.btn_font_reset.setObjectName("fontSizeIndicatorBtn")
+        self.btn_font_reset.setToolTip("Restablecer tamaño de letra")
+        self.btn_font_reset.clicked.connect(self.reset_font_size)
+        font_controls_row.addWidget(self.btn_font_reset)
+
+        self.btn_font_up = QPushButton("+")
+        self.btn_font_up.setObjectName("fontStepBtn")
+        self.btn_font_up.setToolTip("Aumentar tamaño de letra")
+        self.btn_font_up.clicked.connect(self.increase_font_size)
+        font_controls_row.addWidget(self.btn_font_up)
+        controls_panel_layout.addLayout(font_controls_row)
+
+        quick_actions_row = QHBoxLayout()
+        quick_actions_row.setSpacing(6)
+        self.btn_quick_bienvenida = QPushButton("Bienvenida")
+        self.btn_quick_bienvenida.setObjectName("projectionActionBtn")
+        self.btn_quick_bienvenida.setToolTip("Clic: proyectar bienvenida; clic derecho: configurar imagen")
+        self.btn_quick_bienvenida.clicked.connect(
+            lambda: self.project_quick_image("bienvenida", "Bienvenida"))
+        self.btn_quick_bienvenida.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.btn_quick_bienvenida.customContextMenuRequested.connect(
+            lambda pos: self.show_quick_image_menu(
+                "bienvenida", "Bienvenida", self.btn_quick_bienvenida.mapToGlobal(pos)))
+        quick_actions_row.addWidget(self.btn_quick_bienvenida)
+
+        self.btn_quick_despedida = QPushButton("Despedida")
+        self.btn_quick_despedida.setObjectName("projectionActionBtn")
+        self.btn_quick_despedida.setToolTip("Clic: proyectar despedida; clic derecho: configurar imagen")
+        self.btn_quick_despedida.clicked.connect(
+            lambda: self.project_quick_image("despedida", "Despedida"))
+        self.btn_quick_despedida.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.btn_quick_despedida.customContextMenuRequested.connect(
+            lambda pos: self.show_quick_image_menu(
+                "despedida", "Despedida", self.btn_quick_despedida.mapToGlobal(pos)))
+        quick_actions_row.addWidget(self.btn_quick_despedida)
+        controls_panel_layout.addLayout(quick_actions_row)
+        controls_panel_layout.addStretch()
+
+        obs_layout.addWidget(self.projection_controls_panel)
 
         self.right_splitter.addWidget(self.obs_container)
 
@@ -1789,10 +2164,11 @@ class MainWindow(QMainWindow):
         splitter.setSizes([420, 780])
 
         self.set_active_nav_button("Cantos")
+        self._update_projection_status()
 
-    # =========================================================================
-    # PAGINAS DE LA BIBLIOTECA
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Library pages
+    # ---------------------------------------------------------------------------
 
     def setup_songs_page(self):
         container = QFrame()
@@ -1806,7 +2182,7 @@ class MainWindow(QMainWindow):
 
         self.song_search = QLineEdit()
         self.song_search.setObjectName("searchBar")
-        self.song_search.setPlaceholderText("🔎 Buscar cantos...")
+        self.song_search.setPlaceholderText("Buscar cantos...")
         self.song_search.textChanged.connect(self.filter_songs)
         top_row.addWidget(self.song_search)
 
@@ -1834,7 +2210,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(15, 15, 15, 15)
 
-        lbl = QLabel(f"📖 Sección de {name} (Próximamente)")
+        lbl = QLabel(f"▤  Sección de {name} (Próximamente)")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl.setStyleSheet(
             "color: #71717a; font-size: 14px; font-weight: bold;")
@@ -1842,9 +2218,9 @@ class MainWindow(QMainWindow):
 
         self.library_stack.addWidget(container)
 
-    # =========================================================================
-    # MÓDULO DE BIBLIA
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Bible module
+    # ---------------------------------------------------------------------------
 
     # Libros agrupados por testamento, en orden canónico (coincide con import_bible.py)
     BIBLE_BOOKS_OT = [
@@ -1881,55 +2257,47 @@ class MainWindow(QMainWindow):
         self.bible_current_verse = None     # versículo activo (para mantener foco al cambiar versión)
         self.bible_search_mode = False
 
-        # ---- Fila: selector de libro + versiones ----
+        # Los selectores siguen el flujo: versión, libro y capítulo.
         selector_row = QHBoxLayout()
-        selector_row.setSpacing(8)
+        selector_row.setSpacing(10)
+
+        self.bible_version_combo = QComboBox()
+        self.bible_version_combo.setObjectName("bibleSelectorCombo")
+        self.bible_version_combo.addItems(["RVR60", "NVI", "RV1569", "DHH"])
+        self.bible_version_combo.setCurrentText(self.bible_current_version)
+        self.bible_version_combo.currentTextChanged.connect(
+            self.on_bible_version_changed)
 
         self.bible_book_combo = QComboBox()
-        self.bible_book_combo.setObjectName("bibleBookCombo")
-        self.bible_book_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #27272a;
-                color: #ffffff;
-                border: 1px solid #3f3f46;
-                border-radius: 8px;
-                padding: 8px 12px;
-                font-size: 13px;
-                font-weight: bold;
-            }
-            QComboBox::drop-down { border: none; }
-            QComboBox QAbstractItemView {
-                background-color: #27272a;
-                color: #f4f4f5;
-                selection-background-color: #3f3f46;
-            }
-        """)
-        self.bible_book_combo.setMinimumWidth(160)
+        self.bible_book_combo.setObjectName("bibleSelectorCombo")
         self._populate_book_combo()
         self.bible_book_combo.currentTextChanged.connect(
             self.on_bible_book_changed)
-        selector_row.addWidget(self.bible_book_combo)
 
-        selector_row.addStretch()
+        self.bible_chapter_combo = QComboBox()
+        self.bible_chapter_combo.setObjectName("bibleSelectorCombo")
+        self.bible_chapter_combo.addItem("Selecciona capítulo", None)
+        self.bible_chapter_combo.activated.connect(
+            lambda index: self.on_bible_chapter_changed(
+                self.bible_chapter_combo.itemData(index)))
 
-        # Pastillas de versión
-        self.bible_version_buttons = {}
-        for version in ["RVR60", "NVI", "RV1569", "DHH"]:
-            btn = QPushButton(version)
-            btn.setCheckable(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(self._version_btn_style(False))
-            btn.clicked.connect(
-                lambda checked, v=version: self.on_bible_version_changed(v))
-            selector_row.addWidget(btn)
-            self.bible_version_buttons[version] = btn
+        for label, control in (
+            ("VERSIÓN", self.bible_version_combo),
+            ("LIBRO", self.bible_book_combo),
+            ("CAPÍTULO", self.bible_chapter_combo),
+        ):
+            field_layout = QVBoxLayout()
+            field_layout.setContentsMargins(0, 0, 0, 0)
+            field_layout.setSpacing(4)
+            field_label = QLabel(label)
+            field_label.setObjectName("bibleSelectorLabel")
+            field_layout.addWidget(field_label)
+            field_layout.addWidget(control)
+            selector_row.addLayout(field_layout, stretch=1)
 
-        self.bible_version_buttons["RVR60"].setChecked(True)
-        self.bible_version_buttons["RVR60"].setStyleSheet(
-            self._version_btn_style(True))
         layout.addLayout(selector_row)
 
-        # ---- Stack interno: alterna entre sugerencias y capítulos ----
+        # La búsqueda temporal alterna con la vista de versículos del capítulo.
         self.bible_inner_stack = QStackedWidget()
         layout.addWidget(self.bible_inner_stack, stretch=1)
 
@@ -1955,72 +2323,68 @@ class MainWindow(QMainWindow):
 
         self.bible_inner_stack.addWidget(suggestions_page)  # index 0
 
-        # --- Página 1: Grid de capítulos ---
-        chapters_page = QWidget()
-        chapters_page.setStyleSheet("background: transparent;")
-        ch_layout = QVBoxLayout(chapters_page)
-        ch_layout.setContentsMargins(0, 0, 0, 0)
-        ch_layout.setSpacing(4)
+        # La lista bajo los selectores funciona como vista seleccionable del capítulo.
+        verses_page = QWidget()
+        verses_page.setStyleSheet("background: transparent;")
+        verses_layout = QVBoxLayout(verses_page)
+        verses_layout.setContentsMargins(0, 4, 0, 0)
+        verses_layout.setSpacing(6)
 
-        self.bible_chapters_label = QLabel("Capítulos · Juan")
-        self.bible_chapters_label.setStyleSheet(
-            "color: #71717a; font-size: 10px; font-weight: bold; "
-            "letter-spacing: 0.5px; background: transparent;")
-        ch_layout.addWidget(self.bible_chapters_label)
+        self.bible_book_section_label = QLabel("")
+        self.bible_book_section_label.setObjectName("bibleBookSection")
+        verses_layout.addWidget(self.bible_book_section_label)
 
-        self.bible_chapters_scroll = QScrollArea()
-        self.bible_chapters_scroll.setWidgetResizable(True)
-        self.bible_chapters_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.bible_chapters_scroll.setStyleSheet(
-            "background: transparent; border: none;")
+        verse_heading_row = QHBoxLayout()
+        self.bible_chapter_label = QLabel("Selecciona un capítulo")
+        self.bible_chapter_label.setObjectName("bibleChapterHeading")
+        verse_heading_row.addWidget(self.bible_chapter_label)
+        verse_heading_row.addStretch()
 
-        self.bible_chapters_container = QWidget()
-        self.bible_chapters_container.setStyleSheet("background: transparent;")
-        self.bible_chapters_grid = QGridLayout(self.bible_chapters_container)
-        self.bible_chapters_grid.setSpacing(4)
-        self.bible_chapters_grid.setContentsMargins(0, 0, 0, 0)
+        self.bible_verse_count_label = QLabel("")
+        self.bible_verse_count_label.setObjectName("bibleVerseCount")
+        verse_heading_row.addWidget(self.bible_verse_count_label)
+        verses_layout.addLayout(verse_heading_row)
 
-        self.bible_chapters_scroll.setWidget(self.bible_chapters_container)
-        ch_layout.addWidget(self.bible_chapters_scroll, stretch=1)
+        # Permite encontrar un versículo por texto o saltar a él desde un selector.
+        verse_navigation_row = QHBoxLayout()
+        verse_navigation_row.setSpacing(8)
 
-        self.bible_inner_stack.addWidget(chapters_page)  # index 1
-        self.bible_inner_stack.setCurrentIndex(
-            1)  # mostrar capítulos por defecto
+        self.bible_verse_search = QLineEdit()
+        self.bible_verse_search.setObjectName("bibleVerseSearch")
+        self.bible_verse_search.setPlaceholderText(
+            "Buscar versículo por número o texto...")
+        self.bible_verse_search.textChanged.connect(
+            self.filter_bible_verses)
+        verse_navigation_row.addWidget(self.bible_verse_search, stretch=1)
+
+        self.bible_verse_combo = QComboBox()
+        self.bible_verse_combo.setObjectName("bibleVerseCombo")
+        self.bible_verse_combo.addItem("Ir a versículo", None)
+        self.bible_verse_combo.activated.connect(
+            lambda index: self._select_bible_verse(
+                self.bible_verse_combo.itemData(index)))
+        verse_navigation_row.addWidget(self.bible_verse_combo)
+        verses_layout.addLayout(verse_navigation_row)
+
+        self.bible_verses_list = QListWidget()
+        self.bible_verses_list.setObjectName("bibleVerseList")
+        self.bible_verses_list.setSpacing(3)
+        self.bible_verses_list.itemClicked.connect(
+            self._on_bible_verse_clicked)
+        verses_layout.addWidget(self.bible_verses_list, stretch=1)
+
+        self.bible_inner_stack.addWidget(verses_page)  # index 1
+        self.bible_inner_stack.setCurrentIndex(1)
 
         self.library_stack.addWidget(container)
 
-        # Cargar capítulos del libro por defecto
-        self.load_bible_chapters(self.bible_current_book)
-
-    def _version_btn_style(self, active):
-        if active:
-            return """
-                QPushButton {
-                    background-color: #0F6E56;
-                    color: #ffffff;
-                    border: 1px solid #0F6E56;
-                    border-radius: 14px;
-                    padding: 5px 12px;
-                    font-size: 11px;
-                    font-weight: bold;
-                }
-            """
-        return """
-            QPushButton {
-                background-color: #27272a;
-                color: #a1a1aa;
-                border: 1px solid #3f3f46;
-                border-radius: 14px;
-                padding: 5px 12px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #3f3f46;
-                color: #ffffff;
-            }
-        """
+        # Mostrar el primer capítulo como consulta, sin proyectarlo al iniciar.
+        chapters = self.load_bible_chapters(self.bible_current_book)
+        if chapters:
+            self.bible_chapter_combo.setCurrentIndex(
+                self.bible_chapter_combo.findData(chapters[0]))
+            self._load_bible_library_verses(
+                self.bible_current_book, chapters[0])
 
     def _populate_book_combo(self):
         self.bible_book_combo.blockSignals(True)
@@ -2039,12 +2403,6 @@ class MainWindow(QMainWindow):
 
     def on_bible_version_changed(self, version):
         self.bible_current_version = version
-        for v, btn in self.bible_version_buttons.items():
-            is_active = (v == version)
-            btn.setChecked(is_active)
-            btn.setStyleSheet(self._version_btn_style(is_active))
-
-        # Si hay un capítulo activo en la preview, recargarlo con la nueva versión
         if self.bible_current_chapter:
             self.load_bible_chapter_to_preview(
                 self.bible_current_book,
@@ -2052,26 +2410,37 @@ class MainWindow(QMainWindow):
                 focus_verse=self.bible_current_verse
             )
         else:
-            # Sin contenido activo, solo refrescar el grid de capítulos
-            self.load_bible_chapters(self.bible_current_book)
+            chapters = self.load_bible_chapters(self.bible_current_book)
+            if chapters:
+                chapter_num = self.bible_chapter_combo.currentData()
+                if chapter_num not in chapters:
+                    chapter_num = chapters[0]
+                    self.bible_chapter_combo.setCurrentIndex(
+                        self.bible_chapter_combo.findData(chapter_num))
+                self._load_bible_library_verses(
+                    self.bible_current_book, chapter_num)
 
     def on_bible_book_changed(self, book_name):
         if book_name.startswith("──"):
             return
         self.bible_current_book = book_name
-        self.load_bible_chapters(book_name)
+        self.bible_current_chapter = None
+        self.bible_current_verse = None
+        chapters = self.load_bible_chapters(book_name)
+        if chapters:
+            first_chapter = chapters[0]
+            self.bible_chapter_combo.setCurrentIndex(
+                self.bible_chapter_combo.findData(first_chapter))
+            self._load_bible_library_verses(book_name, first_chapter)
+
+    def on_bible_chapter_changed(self, chapter_num):
+        if chapter_num is None:
+            return
+        self.load_bible_chapter_to_preview(
+            self.bible_current_book, int(chapter_num))
 
     def load_bible_chapters(self, book_name, highlight_chapter=None):
-        """Carga el grid de capítulos disponibles para el libro/versión actual.
-        Si highlight_chapter se especifica, ese botón queda resaltado en verde."""
-        self.bible_chapters_label.setText(f"Capítulos · {book_name}")
-
-        # Limpiar grid existente
-        while self.bible_chapters_grid.count():
-            child = self.bible_chapters_grid.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
+        """Actualiza el selector con los capítulos disponibles del libro."""
         conn = sqlite3.connect(database.DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
@@ -2081,50 +2450,157 @@ class MainWindow(QMainWindow):
         chapters = [row[0] for row in cursor.fetchall()]
         conn.close()
 
+        self.bible_chapter_combo.blockSignals(True)
+        self.bible_chapter_combo.clear()
+        self.bible_chapter_combo.addItem("Selecciona capítulo", None)
+        for chapter_num in chapters:
+            self.bible_chapter_combo.addItem(str(chapter_num), chapter_num)
+
+        if highlight_chapter is not None:
+            selected_index = self.bible_chapter_combo.findData(highlight_chapter)
+            if selected_index >= 0:
+                self.bible_chapter_combo.setCurrentIndex(selected_index)
+        self.bible_chapter_combo.blockSignals(False)
+
         if not chapters:
-            empty_lbl = QLabel(
-                f"Sin datos para «{book_name}» en {self.bible_current_version}")
-            empty_lbl.setStyleSheet(
-                "color: #71717a; font-size: 12px; background: transparent;")
-            self.bible_chapters_grid.addWidget(empty_lbl, 0, 0)
+            self.bible_chapter_label.setText("No hay capítulos disponibles")
+            self.bible_book_section_label.setText(
+                f"{book_name.upper()} · {self.bible_current_version}")
+            self.bible_verse_count_label.clear()
+            self.bible_verses_list.clear()
+            self.bible_verse_search.clear()
+            self.bible_verse_combo.clear()
+            self.bible_verse_combo.addItem("Ir a versículo", None)
+            return chapters
+        if highlight_chapter is None:
+            self.bible_chapter_label.setText("Selecciona un capítulo")
+            self.bible_book_section_label.setText(
+                f"{book_name.upper()} · {self.bible_current_version}")
+            self.bible_verse_count_label.clear()
+            self.bible_verses_list.clear()
+        return chapters
+
+    def _load_bible_library_verses(self, book_name, chapter_num):
+        """Carga versículos para consulta sin modificar la proyección activa."""
+        conn = sqlite3.connect(database.DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT verse, text FROM bible "
+            "WHERE book = ? AND chapter = ? AND version = ? ORDER BY verse",
+            (book_name, chapter_num, self.bible_current_version)
+        )
+        verses = cursor.fetchall()
+        conn.close()
+
+        if verses:
+            self._populate_bible_verse_list(
+                verses, book_name, chapter_num, verses[0][0])
+        else:
+            self.bible_verses_list.clear()
+            self.bible_verse_count_label.clear()
+            self.bible_chapter_label.setText("Sin versículos disponibles")
+
+    def _populate_bible_verse_list(self, verses, book_name, chapter_num, selected_verse):
+        """Muestra el capítulo en la biblioteca con filas seleccionables."""
+        self.bible_verses_list.clear()
+        self.bible_verse_search.blockSignals(True)
+        self.bible_verse_search.clear()
+        self.bible_verse_search.blockSignals(False)
+        self.bible_verse_combo.blockSignals(True)
+        self.bible_verse_combo.clear()
+        self.bible_verse_combo.addItem("Ir a versículo", None)
+        gospels = {"Mateo", "Marcos", "Lucas", "Juan"}
+        if book_name in gospels:
+            section_title = f"EVANGELIO SEGÚN {book_name.upper()}"
+        elif book_name in self.BIBLE_BOOKS_OT:
+            section_title = "ANTIGUO TESTAMENTO"
+        else:
+            section_title = "NUEVO TESTAMENTO"
+
+        self.bible_book_section_label.setText(section_title)
+        self.bible_chapter_label.setText(f"Capítulo {chapter_num}")
+        self.bible_verse_count_label.setText(
+            f"{len(verses)} versículos")
+
+        selected_item = None
+        for verse_num, verse_text in verses:
+            self.bible_verse_combo.addItem(
+                f"Versículo {verse_num}", verse_num)
+            item = QListWidgetItem(self.bible_verses_list)
+            item.setData(Qt.ItemDataRole.UserRole, verse_num)
+
+            row = QWidget()
+            row.setObjectName("bibleVersePreviewRow")
+            row.setProperty("selected", verse_num == selected_verse)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(8, 6, 8, 6)
+            row_layout.setSpacing(10)
+
+            number_label = QLabel(str(verse_num))
+            number_label.setObjectName("bibleVerseNumber")
+            number_label.setFixedWidth(24)
+            number_label.setAlignment(
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+            row_layout.addWidget(number_label)
+
+            text_label = QLabel(verse_text)
+            text_label.setObjectName("bibleVerseText")
+            text_label.setWordWrap(True)
+            text_label.setAttribute(
+                Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            number_label.setAttribute(
+                Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            row_layout.addWidget(text_label, stretch=1)
+
+            item.setSizeHint(row.sizeHint())
+            self.bible_verses_list.setItemWidget(item, row)
+            if verse_num == selected_verse:
+                selected_item = item
+
+        selected_combo_index = self.bible_verse_combo.findData(selected_verse)
+        if selected_combo_index >= 0:
+            self.bible_verse_combo.setCurrentIndex(selected_combo_index)
+        self.bible_verse_combo.blockSignals(False)
+
+        if selected_item:
+            self.bible_verses_list.setCurrentItem(selected_item)
+            self.bible_verses_list.scrollToItem(selected_item)
+
+    def filter_bible_verses(self, query):
+        """Filtra las tarjetas del capítulo por número o contenido."""
+        normalized_query = remove_accents(query.strip())
+        for index in range(self.bible_verses_list.count()):
+            item = self.bible_verses_list.item(index)
+            verse_number = str(item.data(Qt.ItemDataRole.UserRole) or "")
+            row = self.bible_verses_list.itemWidget(item)
+            text_label = row.findChild(QLabel, "bibleVerseText") if row else None
+            verse_text = text_label.text() if text_label else ""
+            searchable_text = remove_accents(
+                f"{verse_number} {verse_text}")
+            item.setHidden(bool(normalized_query) and
+                           normalized_query not in searchable_text)
+
+    def _select_bible_verse(self, verse_num):
+        """Salta a un versículo seleccionado desde el combo."""
+        if verse_num is None:
             return
+        self.bible_verse_search.clear()
+        for index in range(self.bible_verses_list.count()):
+            item = self.bible_verses_list.item(index)
+            if item.data(Qt.ItemDataRole.UserRole) == verse_num:
+                self._on_bible_verse_clicked(item)
+                return
 
-        normal_style = """
-            QPushButton {
-                background-color: #27272a;
-                color: #e4e4e7;
-                border: 1px solid #3f3f46;
-                border-radius: 8px;
-                font-size: 13px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #3f3f46;
-                color: #ffffff;
-            }
-        """
-        active_style = """
-            QPushButton {
-                background-color: #0F6E56;
-                color: #ffffff;
-                border: 1px solid #0F6E56;
-                border-radius: 8px;
-                font-size: 13px;
-                font-weight: bold;
-            }
-        """
-
-        cols = 8
-        for idx, chapter_num in enumerate(chapters):
-            row, col = divmod(idx, cols)
-            btn = QPushButton(str(chapter_num))
-            btn.setFixedSize(38, 34)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(active_style if chapter_num ==
-                              highlight_chapter else normal_style)
-            btn.clicked.connect(lambda checked, b=book_name,
-                                c=chapter_num: self.load_bible_chapter_to_preview(b, c))
-            self.bible_chapters_grid.addWidget(btn, row, col)
+    def _on_bible_verse_clicked(self, item):
+        """Selecciona y proyecta el versículo equivalente en la Preview izquierda."""
+        verse_num = item.data(Qt.ItemDataRole.UserRole)
+        chapter_num = self.bible_chapter_combo.currentData()
+        if chapter_num is not None:
+            self.load_bible_chapter_to_preview(
+                self.bible_current_book,
+                int(chapter_num),
+                focus_verse=verse_num,
+            )
 
     def add_bible_to_guion(self, book, chapter, verse, text):
         title = f"{book} {chapter}:{verse}"
@@ -2219,15 +2695,17 @@ class MainWindow(QMainWindow):
         focus_item = None
         for verse_num, verse_text in verses:
             header = f"Versículo {verse_num}"
-            reference = f"{book_name} {chapter_num}:{verse_num}"
+            reference = f"{book_name} {chapter_num}"
 
             list_item = QListWidgetItem(self.preview_list)
             list_item.setData(Qt.ItemDataRole.UserRole, {
                 "mode": "text",
                 "text": verse_text,
                 "header": reference,
-                "song_title": f"{book_name} {chapter_num} · {self.bible_current_version}",
-                "bible_verse": verse_num   # para rastrear versículo activo al cambiar versión
+                "song_title": self.bible_current_version,
+                "display_mode": "bible",
+                "chapter_title": "",
+                "bible_verse": verse_num
             })
 
             # Contenedor: tarjeta + botón "+ Guión" a la derecha
@@ -2341,20 +2819,27 @@ class MainWindow(QMainWindow):
         # Seleccionar y proyectar: el versículo buscado, o el primero por defecto
         target_item = focus_item if focus_item else self.preview_list.item(0)
         if target_item:
+            target_data = target_item.data(Qt.ItemDataRole.UserRole) or {}
+            self._populate_bible_verse_list(
+                verses,
+                book_name,
+                chapter_num,
+                target_data.get("bible_verse"),
+            )
             self.preview_list.setCurrentItem(target_item)
             self.preview_list.scrollToItem(target_item)
             self.on_preview_card_clicked(target_item)
 
-    # =========================================================================
-    # MÓDULO DE GUIÓN
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Script module
+    # ---------------------------------------------------------------------------
 
     # Paleta visual por tipo de item
     GUION_COLORS = {
-        "song":   {"bg": "#1e1b4b", "border": "#6366f1", "icon_bg": "#4f46e5", "icon_fg": "#ffffff", "icon": "♫",  "label": "Canto"},
-        "bible":  {"bg": "#052e16", "border": "#16a34a", "icon_bg": "#15803d", "icon_fg": "#ffffff", "icon": "📖", "label": "Biblia"},
-        "image":  {"bg": "#431407", "border": "#ea580c", "icon_bg": "#c2410c", "icon_fg": "#ffffff", "icon": "🖼", "label": "Imagen"},
-        "pptx":   {"bg": "#3b0764", "border": "#a855f7", "icon_bg": "#9333ea", "icon_fg": "#ffffff", "icon": "🖥", "label": "Presentación"},
+        "song":   {"icon": "♫",  "label": "CANTO"},
+        "bible":  {"icon": "▤", "label": "BIBLIA"},
+        "image":  {"icon": "▧", "label": "IMAGEN"},
+        "pptx":   {"icon": "▣", "label": "PPTX"},
     }
 
     def setup_guion_page(self):
@@ -2377,7 +2862,7 @@ class MainWindow(QMainWindow):
             "color: #52525b; font-size: 11px; background: transparent;")
         header_row.addWidget(self.guion_count_lbl)
 
-        clear_btn = QPushButton("🗑 Limpiar todo")
+        clear_btn = QPushButton("Limpiar todo")
         clear_btn.setStyleSheet("""
             QPushButton {
                 background-color: #27272a;
@@ -2397,8 +2882,8 @@ class MainWindow(QMainWindow):
 
         # Lista del guión
         self.guion_list = QListWidget()
-        self.guion_list.setObjectName("libraryList")
-        self.guion_list.setSpacing(3)
+        self.guion_list.setObjectName("guionList")
+        self.guion_list.setSpacing(7)
         self.guion_list.itemClicked.connect(self.on_guion_item_clicked)
         self.guion_list.itemDoubleClicked.connect(
             self.on_guion_item_double_clicked)
@@ -2406,7 +2891,7 @@ class MainWindow(QMainWindow):
 
         # Estado vacío
         self.guion_empty_lbl = QLabel(
-            "📋  Agrega cantos, versículos, imágenes o\npresentaciones desde las otras pestañas")
+            "Agrega cantos, versículos, imágenes o\npresentaciones desde las otras pestañas")
         self.guion_empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.guion_empty_lbl.setStyleSheet(
             "color: #52525b; font-size: 13px; background: transparent; line-height: 1.6;")
@@ -2437,82 +2922,83 @@ class MainWindow(QMainWindow):
             list_item.setData(Qt.ItemDataRole.UserRole, {
                               "type": item_type, "data": item_data})
 
-            widget = self._make_guion_row(item_type, item_data, colors)
+            widget = self._make_guion_row(
+                item_type, item_data, colors, self.guion_list.count())
             list_item.setSizeHint(widget.minimumSizeHint())
             self.guion_list.setItemWidget(list_item, widget)
 
-    def _make_guion_row(self, item_type, item_data, colors):
+    def _make_guion_row(self, item_type, item_data, colors, order):
         """Crea el widget visual de una fila del Guión."""
         row = QFrame()
-        row.setStyleSheet(f"""
-            QFrame {{
-                background-color: {colors['bg']};
-                border: 1px solid {colors['border']};
-                border-radius: 8px;
-            }}
-        """)
+        row.setObjectName("guionRow")
         layout = QHBoxLayout(row)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(12)
 
-        # Icono circular
+        order_lbl = QLabel(f"{order:02d}")
+        order_lbl.setObjectName("guionOrder")
+        order_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        order_lbl.setFixedWidth(34)
+        order_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        layout.addWidget(order_lbl)
+
+        # Icono neutro y etiqueta de tipo para escanear la secuencia rápidamente.
         icon_lbl = QLabel(colors["icon"])
+        icon_lbl.setObjectName("guionTypeIcon")
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_lbl.setFixedSize(34, 34)
-        icon_lbl.setStyleSheet(f"""
-            background-color: {colors['icon_bg']};
-            color: {colors['icon_fg']};
-            border-radius: 17px;
-            font-size: 14px;
-        """)
+        icon_lbl.setFixedSize(28, 28)
         icon_lbl.setAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         layout.addWidget(icon_lbl)
 
-        # Textos
-        text_col = QVBoxLayout()
-        text_col.setSpacing(2)
+        type_lbl = QLabel(colors["label"])
+        type_lbl.setObjectName("guionTypeLabel")
+        type_lbl.setFixedWidth(74)
+        type_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        layout.addWidget(type_lbl)
 
-        name_lbl = QLabel(item_data.get(
+        title_lbl = QLabel(item_data.get(
             "title", item_data.get("name", "Sin título")))
-        name_lbl.setStyleSheet(
-            "color: #f4f4f5; font-weight: bold; font-size: 13px; background: transparent;")
-        name_lbl.setAttribute(
+        title_lbl.setObjectName("guionItemTitle")
+        title_lbl.setMinimumWidth(120)
+        title_lbl.setAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        text_col.addWidget(name_lbl)
+        layout.addWidget(title_lbl, stretch=1)
 
-        sub_lbl = QLabel(colors["label"])
-        sub_lbl.setStyleSheet(
-            f"color: {colors['border']}; font-size: 10px; font-weight: bold; background: transparent;")
-        sub_lbl.setAttribute(
+        detail_text = ""
+        if item_type == "bible":
+            detail_text = f"{item_data.get('book', '')} {item_data.get('chapter', '')}"
+        elif item_type == "image":
+            detail_text = "Archivo local"
+        elif item_type == "pptx":
+            detail_text = "Presentación"
+
+        detail_lbl = QLabel(detail_text)
+        detail_lbl.setObjectName("guionItemDetail")
+        detail_lbl.setMinimumWidth(90)
+        detail_lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        detail_lbl.setAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        text_col.addWidget(sub_lbl)
+        layout.addWidget(detail_lbl)
 
-        layout.addLayout(text_col)
-        layout.addStretch()
-
-        # Botón eliminar
-        del_btn = QPushButton("✕")
+        del_btn = QPushButton("×")
+        del_btn.setObjectName("guionRemoveBtn")
         del_btn.setFixedSize(26, 26)
-        del_btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255,255,255,0.07);
-                color: #a1a1aa;
-                border: 1px solid #3f3f46;
-                border-radius: 13px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #7f1d1d;
-                color: #fca5a5;
-                border-color: #991b1b;
-            }
-        """)
+        del_btn.setToolTip("Quitar del Guion")
         del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         del_btn.clicked.connect(
             lambda: self.guion_remove_item(item_type, item_data))
         layout.addWidget(del_btn)
+
+        arrow_lbl = QLabel("›")
+        arrow_lbl.setObjectName("guionRowArrow")
+        arrow_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        arrow_lbl.setFixedWidth(18)
+        arrow_lbl.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        layout.addWidget(arrow_lbl)
 
         return row
 
@@ -2615,6 +3101,7 @@ class MainWindow(QMainWindow):
         data = list_item.data(Qt.ItemDataRole.UserRole)
         if not data:
             return
+        self._set_active_guion_row(list_item)
         self._load_guion_item_to_preview(data["type"], data["data"])
 
     def on_guion_item_double_clicked(self, list_item):
@@ -2622,8 +3109,20 @@ class MainWindow(QMainWindow):
         data = list_item.data(Qt.ItemDataRole.UserRole)
         if not data:
             return
+        self._set_active_guion_row(list_item)
         self._load_guion_item_to_preview(
             data["type"], data["data"], auto_project=True)
+
+    def _set_active_guion_row(self, active_item):
+        """Resalta solo la fila activa del guion."""
+        for index in range(self.guion_list.count()):
+            item = self.guion_list.item(index)
+            widget = self.guion_list.itemWidget(item)
+            if not widget:
+                continue
+            widget.setProperty("active", item is active_item)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
 
     def _load_guion_item_to_preview(self, item_type, item_data, auto_project=False):
         """Carga un ítem del Guión en la preview, según su tipo."""
@@ -2665,7 +3164,7 @@ class MainWindow(QMainWindow):
         # Buscador de imágenes
         self.image_search = QLineEdit()
         self.image_search.setObjectName("searchBar")
-        self.image_search.setPlaceholderText("🔎 Buscar imágenes...")
+        self.image_search.setPlaceholderText("Buscar imágenes...")
         self.image_search.textChanged.connect(self.filter_images)
         top_layout.addWidget(self.image_search)
 
@@ -2893,7 +3392,7 @@ class MainWindow(QMainWindow):
         # Buscador de presentaciones
         self.pptx_search = QLineEdit()
         self.pptx_search.setObjectName("searchBar")
-        self.pptx_search.setPlaceholderText("🔎 Buscar presentaciones...")
+        self.pptx_search.setPlaceholderText("Buscar presentaciones...")
         self.pptx_search.textChanged.connect(self.filter_pptx)
         top_layout.addWidget(self.pptx_search)
 
@@ -3284,9 +3783,9 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 print(f"Error cargando fondo de letras persistido: {e}")
 
-    # =========================================================================
-    # ACCESOS RÁPIDOS DE IMÁGENES (BIENVENIDA / DESPEDIDA)
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Quick image shortcuts
+    # ---------------------------------------------------------------------------
 
     def get_quick_image_path(self, image_type, title_name):
         """Obtiene la ruta asignada a la imagen rápida (Bienvenida o Despedida)."""
@@ -3476,7 +3975,7 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        proj_action = menu.addAction(f"🖼  Proyectar {title_name}")
+        proj_action = menu.addAction(f"▧  Proyectar {title_name}")
         proj_action.triggered.connect(
             lambda: self.project_quick_image(image_type, title_name))
 
@@ -3493,9 +3992,9 @@ class MainWindow(QMainWindow):
 
         menu.exec(global_pos)
 
-    # =========================================================================
-    # CARGAR CANTOS A LA BIBLIOTECA (CON NORMALIZACIÓN DE ACENTOS)
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Song library load and filtering
+    # ---------------------------------------------------------------------------
 
     def load_songs_library(self, filter_text=""):
         self.songs_list.clear()
@@ -3571,9 +4070,9 @@ class MainWindow(QMainWindow):
             self.preview_list.clear()
             self.load_songs_library(self.song_search.text())
 
-    # =========================================================================
-    # NAVEGACIÓN
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Navigation
+    # ---------------------------------------------------------------------------
 
     def make_nav_callback(self, name):
         def callback():
@@ -3688,16 +4187,18 @@ class MainWindow(QMainWindow):
         layout.setSpacing(10)
 
         # Icono según tipo
-        icons = {"book": "📖", "chapter": "📄", "verse": "✦"}
-        colors = {"book": "#16a34a", "chapter": "#6366f1", "verse": "#0F6E56"}
+        icons = {"book": "▤", "chapter": "▣", "verse": "•"}
         t = sug["type"]
 
-        icon_lbl = QLabel(icons.get(t, "📖"))
+        icon_lbl = QLabel(icons.get(t, "▤"))
         icon_lbl.setFixedSize(30, 30)
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_lbl.setStyleSheet(f"""
-            background-color: {colors.get(t, '#27272a')};
-            border-radius: 15px; font-size: 13px;
+        icon_lbl.setStyleSheet("""
+            background-color: #202923;
+            color: #a9bbb2;
+            border: 1px solid #3a4b40;
+            border-radius: 5px;
+            font-size: 14px;
         """)
         icon_lbl.setAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -3757,11 +4258,32 @@ class MainWindow(QMainWindow):
             is_active = (name == active_name)
             btn.setProperty("active", "true" if is_active else "false")
             btn.style().polish(btn)
+        self._resize_library_for_active_page()
         self._update_guion_buttons()
 
-    # =========================================================================
-    # INTERACCIÓN CON LA BIBLIOTECA (UN CLIC Y DOBLE CLIC)
-    # =========================================================================
+    def _resize_library_for_active_page(self):
+        """Amplía el Guion sin quitarle demasiado espacio a la salida."""
+        if not hasattr(self, "right_splitter") or self.right_splitter.height() <= 0:
+            return
+
+        total_height = self.right_splitter.height()
+        guion_active = self.current_nav == "Guión"
+        self.obs_container.setMinimumHeight(280 if guion_active else 320)
+
+        if guion_active:
+            library_height = int(total_height * 0.54)
+            output_height = total_height - library_height
+            self.right_splitter.setSizes([library_height, output_height])
+        elif self._is_external_obs_mode:
+            library_height = max(int(total_height * 0.60), 300)
+            self.right_splitter.setSizes(
+                [library_height, total_height - library_height])
+        else:
+            self.right_splitter.setSizes([2000, 4000])
+
+    # ---------------------------------------------------------------------------
+    # Library interaction
+    # ---------------------------------------------------------------------------
 
     def on_library_song_clicked(self, item):
         data = item.data(Qt.ItemDataRole.UserRole)
@@ -3779,9 +4301,9 @@ class MainWindow(QMainWindow):
                 self.preview_list.setCurrentItem(first_item)
                 self.on_preview_card_clicked(first_item)
 
-    # =========================================================================
-    # CARGA A VISTA PREVIA (IZQUIERDA) CON TARJETA DE TÍTULO
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Preview panel loader
+    # ---------------------------------------------------------------------------
 
     def load_song_to_preview_by_id(self, song_id):
         conn = sqlite3.connect(database.DB_PATH)
@@ -3848,9 +4370,9 @@ class MainWindow(QMainWindow):
 
         self.project_selected_card(item)
 
-    # =========================================================================
-    # ACCIONES DE PROYECCIÓN ESTABLE
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Projection actions
+    # ---------------------------------------------------------------------------
 
     @property
     def projection_window(self):
@@ -3866,9 +4388,9 @@ class MainWindow(QMainWindow):
         wins = [w for w in self.projection_windows.values() if w and w.isVisible()]
         return wins[1] if len(wins) > 1 else None
 
-    # =========================================================================
-    # ACCIONES DE PROYECCIÓN MULTIPANTALLA ESTABLE
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Stable multi-screen projection actions
+    # ---------------------------------------------------------------------------
 
     def project_selected_card(self, item):
         data = item.data(Qt.ItemDataRole.UserRole)
@@ -3884,24 +4406,60 @@ class MainWindow(QMainWindow):
             text = data["text"]
             header = data.get("header", "")
             song_title = data.get("song_title", "")
+            display_mode = data.get("display_mode", "standard")
+            verse_number = data.get("bible_verse")
+            chapter_title = data.get("chapter_title", "")
 
-            # Si es un versículo de Biblia, recordar cuál está activo
             if "bible_verse" in data:
                 self.bible_current_verse = data["bible_verse"]
+                self.bible_verse_search.clear()
+                combo_index = self.bible_verse_combo.findData(verse_number)
+                if combo_index >= 0:
+                    self.bible_verse_combo.setCurrentIndex(combo_index)
+                for index in range(self.bible_verses_list.count()):
+                    verse_item = self.bible_verses_list.item(index)
+                    verse_row = self.bible_verses_list.itemWidget(verse_item)
+                    if verse_row:
+                        is_selected = (
+                            verse_item.data(Qt.ItemDataRole.UserRole)
+                            == verse_number
+                        )
+                        verse_row.setProperty("selected", is_selected)
+                        verse_row.style().unpolish(verse_row)
+                        verse_row.style().polish(verse_row)
+                    if verse_item.data(Qt.ItemDataRole.UserRole) == verse_number:
+                        self.bible_verses_list.setCurrentItem(verse_item)
+                        self.bible_verses_list.scrollToItem(verse_item)
+                        break
 
             self.current_projection_mode = "text"
             self.last_projected_mode = "text"
             self.last_projected_text = text
             self.last_projected_header = header
             self.last_projected_song_title = song_title
+            self.last_projected_display_mode = display_mode
+            self.last_projected_verse_number = verse_number
+            self.last_projected_chapter_title = chapter_title
 
-            # Local
-            self.local_projection_widget.display_text(text, header, song_title)
+            self.local_projection_widget.display_text(
+                text,
+                header,
+                song_title,
+                display_mode=display_mode,
+                verse_number=verse_number,
+                chapter_title=chapter_title,
+            )
 
-            # Todas las pantallas externas activas
             for win in list(self.projection_windows.values()):
                 if win and win.isVisible():
-                    win.projection_widget.display_text(text, header, song_title)
+                    win.projection_widget.display_text(
+                        text,
+                        header,
+                        song_title,
+                        display_mode=display_mode,
+                        verse_number=verse_number,
+                        chapter_title=chapter_title,
+                    )
 
         elif mode == "image":
             file_path = data["file_path"]
@@ -3940,12 +4498,22 @@ class MainWindow(QMainWindow):
         if self.last_projected_mode == "text":
             self.current_projection_mode = "text"
             self.local_projection_widget.display_text(
-                self.last_projected_text, self.last_projected_header, self.last_projected_song_title
+                self.last_projected_text,
+                self.last_projected_header,
+                self.last_projected_song_title,
+                display_mode=self.last_projected_display_mode,
+                verse_number=self.last_projected_verse_number,
+                chapter_title=self.last_projected_chapter_title,
             )
             for win in list(self.projection_windows.values()):
                 if win and win.isVisible():
                     win.projection_widget.display_text(
-                        self.last_projected_text, self.last_projected_header, self.last_projected_song_title
+                        self.last_projected_text,
+                        self.last_projected_header,
+                        self.last_projected_song_title,
+                        display_mode=self.last_projected_display_mode,
+                        verse_number=self.last_projected_verse_number,
+                        chapter_title=self.last_projected_chapter_title,
                     )
         elif self.last_projected_mode == "image":
             self.current_projection_mode = "image"
@@ -3958,9 +4526,9 @@ class MainWindow(QMainWindow):
                         self.last_projected_image_path, self.last_projected_header, self.last_projected_song_title
                     )
 
-    # =========================================================================
-    # GESTOR DE PROYECCIÓN MULTIPANTALLA
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Multi-screen projection manager
+    # ---------------------------------------------------------------------------
 
     def is_screen_projecting(self, screen):
         """Verifica si una pantalla específica tiene una ventana de proyección abierta y visible."""
@@ -4013,7 +4581,7 @@ class MainWindow(QMainWindow):
         self._sync_projection_window(win)
 
         self.adjust_obs_container_size(is_external_visible=True)
-        self._update_obs_header_status()
+        self._update_projection_status()
 
     def stop_projection_on_screen(self, screen):
         """Detiene y cierra la proyección en una pantalla específica."""
@@ -4025,7 +4593,7 @@ class MainWindow(QMainWindow):
 
         has_active = any(w and w.isVisible() for w in self.projection_windows.values())
         self.adjust_obs_container_size(is_external_visible=has_active)
-        self._update_obs_header_status()
+        self._update_projection_status()
 
     def on_projection_screen_closed(self, screen):
         """Callback cuando una ventana de proyección externa es cerrada por el usuario o SO."""
@@ -4033,7 +4601,7 @@ class MainWindow(QMainWindow):
             self.projection_windows.pop(screen, None)
         has_active = any(w and w.isVisible() for w in self.projection_windows.values())
         self.adjust_obs_container_size(is_external_visible=has_active)
-        self._update_obs_header_status()
+        self._update_projection_status()
 
     def project_all_secondary_screens(self):
         """Activa la proyección en todas las pantallas secundarias detectadas."""
@@ -4057,7 +4625,7 @@ class MainWindow(QMainWindow):
                 win.close()
         self.projection_windows.clear()
         self.adjust_obs_container_size(is_external_visible=False)
-        self._update_obs_header_status()
+        self._update_projection_status()
 
     def show_screen_menu(self, target=None, pos=None, *args, **kwargs):
         """Muestra el menú interactivo para gestionar la proyección individual o múltiple."""
@@ -4095,11 +4663,11 @@ class MainWindow(QMainWindow):
         if len(screens) > 1:
             all_sec_active = bool(secondary_screens and all(self.is_screen_projecting(s) for s in secondary_screens))
             if not all_sec_active:
-                act_all_sec = menu.addAction("🖥  Proyectar en TODAS las pantallas secundarias")
+                act_all_sec = menu.addAction("▣  Proyectar en TODAS las pantallas secundarias")
                 act_all_sec.triggered.connect(self.project_all_secondary_screens)
 
             if len(active_screens) < len(screens) and len(secondary_screens) > 1:
-                act_all = menu.addAction("🖥  Proyectar en TODAS las pantallas (incluida principal)")
+                act_all = menu.addAction("▣  Proyectar en TODAS las pantallas (incluida principal)")
                 act_all.triggered.connect(self.project_all_screens)
 
             menu.addSeparator()
@@ -4125,7 +4693,7 @@ class MainWindow(QMainWindow):
                 extra_info.append("Clic para proyectar")
 
             info_str = " (" + " · ".join(extra_info) + ")" if extra_info else ""
-            icon_status = "🟢" if is_active else "🖥"
+            icon_status = "●" if is_active else "▣"
             label = f"{icon_status}  Pantalla {i + 1}  —  {geo.width()}×{geo.height()}{info_str}"
 
             action = menu.addAction(label)
@@ -4149,13 +4717,21 @@ class MainWindow(QMainWindow):
         if self.current_projection_mode == "text":
             if not self.local_projection_widget.text_label.text():
                 win.projection_widget.display_text(
-                    "", self.last_projected_header, self.last_projected_song_title
+                    "",
+                    self.last_projected_header,
+                    self.last_projected_song_title,
+                    display_mode=self.last_projected_display_mode,
+                    verse_number=self.last_projected_verse_number,
+                    chapter_title=self.last_projected_chapter_title,
                 )
             else:
                 win.projection_widget.display_text(
                     self.last_projected_text,
                     self.last_projected_header,
-                    self.last_projected_song_title
+                    self.last_projected_song_title,
+                    display_mode=self.last_projected_display_mode,
+                    verse_number=self.last_projected_verse_number,
+                    chapter_title=self.last_projected_chapter_title,
                 )
         elif self.current_projection_mode == "image":
             win.projection_widget.display_image(
@@ -4166,32 +4742,91 @@ class MainWindow(QMainWindow):
         elif self.current_projection_mode == "black":
             win.projection_widget.set_black_screen()
 
-    def _update_obs_header_status(self):
-        """Actualiza la cabecera del visor OBS con el estado de las proyecciones activas."""
-        active_screens = [s for s in QApplication.screens() if self.is_screen_projecting(s)]
-        screens = QApplication.screens()
+    def _set_projection_output(self, screen, enabled):
+        """Abre o cierra la ventana nativa de proyección en una pantalla."""
+        if enabled != self.is_screen_projecting(screen):
+            self.toggle_screen_projection(screen)
 
-        if not active_screens:
-            self.local_projection_widget.obs_title.setText("VENTANA OBS")
-            self.local_projection_widget.obs_title.setStyleSheet("color: #52525b; font-weight: bold; font-size: 10px;")
-            if hasattr(self.local_projection_widget, "btn_screens"):
-                self.local_projection_widget.btn_screens.setText("🖥 Pantallas ▾")
-                self.local_projection_widget.btn_screens.setStyleSheet("padding: 2px 8px; font-size: 11px;")
-        elif len(active_screens) == 1:
-            s = active_screens[0]
-            idx = screens.index(s) + 1 if s in screens else "?"
-            geo = s.geometry()
-            self.local_projection_widget.obs_title.setText(f"VENTANA OBS ● Proyectando en P{idx} ({geo.width()}×{geo.height()})")
-            self.local_projection_widget.obs_title.setStyleSheet("color: #4ade80; font-weight: bold; font-size: 10px;")
-            if hasattr(self.local_projection_widget, "btn_screens"):
-                self.local_projection_widget.btn_screens.setText(f"● P{idx} Activa ▾")
-                self.local_projection_widget.btn_screens.setStyleSheet("padding: 2px 8px; font-size: 11px; color: #4ade80; border-color: #22c55e;")
-        else:
-            self.local_projection_widget.obs_title.setText(f"VENTANA OBS ● Proyectando en {len(active_screens)} pantallas")
-            self.local_projection_widget.obs_title.setStyleSheet("color: #4ade80; font-weight: bold; font-size: 10px;")
-            if hasattr(self.local_projection_widget, "btn_screens"):
-                self.local_projection_widget.btn_screens.setText(f"● {len(active_screens)} Pantallas ▾")
-                self.local_projection_widget.btn_screens.setStyleSheet("padding: 2px 8px; font-size: 11px; color: #4ade80; border-color: #22c55e;")
+    def _refresh_projection_outputs(self):
+        """Actualiza la lista de pantallas y el estado de sus interruptores."""
+        if not hasattr(self, "projection_outputs_layout"):
+            return
+
+        screens = QApplication.screens()
+        for screen, row_data in list(self.projection_output_rows.items()):
+            if screen not in screens:
+                self.projection_outputs_layout.removeWidget(row_data["frame"])
+                row_data["frame"].deleteLater()
+                del self.projection_output_rows[screen]
+
+        primary_screen = QApplication.primaryScreen()
+        for index, screen in enumerate(screens, start=1):
+            row_data = self.projection_output_rows.get(screen)
+            if row_data is None:
+                # Cada interruptor controla una salida de pantalla real.
+                row = QFrame()
+                row.setObjectName("projectionScreenRow")
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(7, 5, 7, 5)
+                row_layout.setSpacing(7)
+
+                icon = QLabel("▣")
+                icon.setObjectName("projectionScreenIcon")
+                icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                icon.setFixedSize(30, 30)
+                row_layout.addWidget(icon)
+
+                text_layout = QVBoxLayout()
+                text_layout.setContentsMargins(0, 0, 0, 0)
+                text_layout.setSpacing(2)
+                title = QLabel()
+                title.setObjectName("projectionScreenName")
+                detail = QLabel()
+                detail.setObjectName("projectionScreenDetails")
+                text_layout.addWidget(title)
+                text_layout.addWidget(detail)
+                row_layout.addLayout(text_layout, stretch=1)
+
+                toggle = QCheckBox()
+                toggle.setObjectName("projectionScreenToggle")
+                toggle.setToolTip("Activar o detener la proyección en esta pantalla")
+                toggle.toggled.connect(
+                    lambda enabled, target=screen:
+                    self._set_projection_output(target, enabled)
+                )
+                row_layout.addWidget(toggle)
+
+                row_data = {
+                    "frame": row,
+                    "title": title,
+                    "detail": detail,
+                    "toggle": toggle,
+                }
+                self.projection_output_rows[screen] = row_data
+                self.projection_outputs_layout.addWidget(row)
+
+            geometry = screen.geometry()
+            is_primary = screen == primary_screen
+            screen_name = "Pantalla principal" if is_primary else (screen.name() or f"Pantalla {index}")
+            is_active = self.is_screen_projecting(screen)
+            row_data["title"].setText(screen_name)
+            status = "Proyectando" if is_active else "Disponible"
+            row_data["detail"].setText(
+                f"{geometry.width()} × {geometry.height()} · {status}"
+            )
+            row_data["toggle"].setAccessibleName(screen_name)
+            row_data["toggle"].blockSignals(True)
+            row_data["toggle"].setChecked(is_active)
+            row_data["toggle"].blockSignals(False)
+            row = row_data["frame"]
+            row.setProperty("active", is_active)
+            row.style().unpolish(row)
+            row.style().polish(row)
+
+    def _update_projection_status(self):
+        """Sincroniza el encabezado y las filas de salida nativa."""
+        self.local_projection_widget.projection_title.setText("PROYECCIÓN")
+        self._refresh_projection_outputs()
 
     def _check_screens_connected(self):
         """Verifica cada 2s si las pantallas asignadas siguen conectadas físicamente."""
@@ -4209,7 +4844,7 @@ class MainWindow(QMainWindow):
         if disconnected:
             has_active = any(w and w.isVisible() for w in self.projection_windows.values())
             self.adjust_obs_container_size(is_external_visible=has_active)
-            self._update_obs_header_status()
+        self._update_projection_status()
 
     def toggle_projection_window(self):
         """Alterna la proyección en la primera pantalla secundaria disponible."""
@@ -4236,12 +4871,12 @@ class MainWindow(QMainWindow):
     def on_projection_window_closed(self):
         has_active = any(w and w.isVisible() for w in self.projection_windows.values())
         self.adjust_obs_container_size(is_external_visible=has_active)
-        self._update_obs_header_status()
+        self._update_projection_status()
 
     def on_projection_window_2_closed(self):
         has_active = any(w and w.isVisible() for w in self.projection_windows.values())
         self.adjust_obs_container_size(is_external_visible=has_active)
-        self._update_obs_header_status()
+        self._update_projection_status()
 
     def adjust_obs_container_size(self, is_external_visible):
         has_active = any(w and w.isVisible() for w in self.projection_windows.values()) if is_external_visible else False
@@ -4273,8 +4908,17 @@ class MainWindow(QMainWindow):
             self.obs_container.setMaximumHeight(16777215)
             self.right_splitter.setSizes([2000, 4000])
 
+    def _update_font_size_indicator(self):
+        """Refleja el nivel de tamaño actual en el botón de restablecimiento."""
+        offset = getattr(self, "external_font_size_offset", 0)
+        label = "S" if offset < 0 else "L" if offset > 0 else "M"
+        self.btn_font_reset.setText(label)
+
     def increase_font_size(self):
         self.external_font_size_offset = getattr(self, "external_font_size_offset", 0) + 4
+        self._update_font_size_indicator()
+        self.local_projection_widget.font_size_offset = self.external_font_size_offset
+        self.local_projection_widget.adjust_font_size()
         for win in list(self.projection_windows.values()):
             if win and win.isVisible():
                 win.projection_widget.font_size_offset = self.external_font_size_offset
@@ -4282,6 +4926,9 @@ class MainWindow(QMainWindow):
 
     def decrease_font_size(self):
         self.external_font_size_offset = getattr(self, "external_font_size_offset", 0) - 4
+        self._update_font_size_indicator()
+        self.local_projection_widget.font_size_offset = self.external_font_size_offset
+        self.local_projection_widget.adjust_font_size()
         for win in list(self.projection_windows.values()):
             if win and win.isVisible():
                 win.projection_widget.font_size_offset = self.external_font_size_offset
@@ -4289,14 +4936,17 @@ class MainWindow(QMainWindow):
 
     def reset_font_size(self):
         self.external_font_size_offset = 0
+        self._update_font_size_indicator()
+        self.local_projection_widget.font_size_offset = 0
+        self.local_projection_widget.adjust_font_size()
         for win in list(self.projection_windows.values()):
             if win and win.isVisible():
                 win.projection_widget.font_size_offset = 0
                 win.projection_widget.adjust_font_size()
 
-    # =========================================================================
-    # GESTIÓN DEL GUION (TEMPORAL)
-    # =========================================================================
+    # ---------------------------------------------------------------------------
+    # Script management
+    # ---------------------------------------------------------------------------
 
     def add_song_to_guion(self, song_id, title):
         if any(s["id"] == song_id for s in self.guion["songs"]):

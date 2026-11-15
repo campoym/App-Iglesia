@@ -41,6 +41,30 @@ QFrame#topNavBar {
     padding: 0px 10px;
 }
 
+QLabel#appBrandIcon {
+    background-color: #111715;
+    border: 1px solid #34463c;
+    border-radius: 7px;
+    color: #a6dfc2;
+    font-size: 19px;
+    font-weight: bold;
+}
+
+QLabel#appBrandStation {
+    color: #81958b;
+    background: transparent;
+    font-size: 8px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+QLabel#appBrandName {
+    color: #edf3ef;
+    background: transparent;
+    font-size: 14px;
+    font-weight: 700;
+}
+
 QPushButton#navBtn {
     background-color: transparent;
     color: #a1a1aa;
@@ -58,9 +82,9 @@ QPushButton#navBtn:hover {
 }
 
 QPushButton#navBtn[active="true"] {
-    background-color: #3f3f46;
+    background-color: #202923;
     color: #ffffff;
-    border: 1px solid #6366f1;
+    border: 1px solid #547967;
 }
 
 /* Paneles del Contenedor (Misma tonalidad que el Mockup) */
@@ -121,6 +145,364 @@ QListWidget#previewList::item {
     margin-bottom: 6px;
 }
 
+/* Dialogo amplio para crear o editar cantos */
+QFrame#songEditorHeader {
+    background-color: #111815;
+    border-bottom: 1px solid #29352f;
+}
+
+QFrame#songEditorMeta {
+    background-color: #121916;
+}
+
+QFrame#songEditorFooter {
+    background-color: #111815;
+    border-top: 1px solid #29352f;
+}
+
+QLabel#songEditorIcon {
+    color: #a6dfc2;
+    background-color: #20352b;
+    border: 1px solid #355846;
+    border-radius: 6px;
+    font-size: 19px;
+}
+
+QLabel#songEditorEyebrow,
+QLabel#songEditorFieldLabel {
+    color: #84968c;
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.4px;
+}
+
+QLabel#songEditorTitle {
+    color: #edf3ef;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+QLabel#songEditorSectionTitle {
+    color: #dce5e0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QLabel#songEditorCount {
+    color: #75867d;
+    font-size: 10px;
+    font-weight: normal;
+}
+
+QPushButton#songEditorCloseBtn,
+QPushButton#songEditorCancelBtn {
+    background-color: transparent;
+    color: #9aa8a0;
+    border: 1px solid #34413a;
+    border-radius: 5px;
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+QPushButton#songEditorCloseBtn {
+    padding: 0px;
+    font-size: 18px;
+}
+
+QPushButton#songEditorCloseBtn:hover,
+QPushButton#songEditorCancelBtn:hover {
+    background-color: #202b25;
+    color: #edf3ef;
+}
+
+QPushButton#songEditorSaveBtn {
+    background-color: #a6dfc2;
+    color: #102018;
+    border: 1px solid #a6dfc2;
+    border-radius: 5px;
+    padding: 9px 16px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+QPushButton#songEditorSaveBtn:hover:enabled {
+    background-color: #c1ecd4;
+}
+
+QPushButton#songEditorSaveBtn:disabled {
+    background-color: #2a3730;
+    color: #718078;
+    border-color: #34413a;
+}
+
+QPushButton#songEditorAddSectionBtn {
+    background-color: #17211c;
+    color: #c7d7ce;
+    border: 1px solid #34463c;
+    border-radius: 5px;
+    padding: 7px 10px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+QPushButton#songEditorAddSectionBtn:hover {
+    background-color: #20352b;
+    border-color: #5da98c;
+}
+
+QFrame#songEditorPreviewPanel {
+    background-color: #121916;
+    border: 1px solid #293830;
+    border-radius: 6px;
+}
+
+QFrame#songPreviewCanvas {
+    background-color: #0c1511;
+    border: 1px solid #304239;
+    border-radius: 5px;
+}
+
+QLabel#songPreviewSection {
+    color: #83d2b1;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.6px;
+    background: transparent;
+}
+
+QLabel#songPreviewLyrics {
+    color: #f0eee7;
+    font-family: "Times New Roman", Georgia, serif;
+    font-size: 23px;
+    font-weight: 600;
+    background: transparent;
+}
+
+QLabel#songPreviewFooter {
+    color: #819087;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.4px;
+    background: transparent;
+}
+
+/* Lista compacta y cronológica del Guion */
+QListWidget#guionList {
+    background: transparent;
+    border: none;
+}
+
+QListWidget#guionList::item {
+    background: transparent;
+    border: none;
+    padding: 0px;
+}
+
+QFrame#guionRow {
+    background: transparent;
+    border-bottom: 1px solid #242d29;
+}
+
+QFrame#guionRow:hover,
+QFrame#guionRow[active="true"] {
+    background-color: #18201d;
+}
+
+QFrame#guionRow[active="true"] {
+    border-left: 2px solid #62c7aa;
+}
+
+QLabel#guionOrder {
+    color: #64746c;
+    font-size: 10px;
+    background: transparent;
+}
+
+QLabel#guionTypeIcon {
+    color: #a9bbb2;
+    background-color: #242e29;
+    border: 1px solid #34413a;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+QLabel#guionTypeLabel {
+    color: #80a08f;
+    font-size: 9px;
+    font-weight: bold;
+    background: transparent;
+}
+
+QLabel#guionItemTitle {
+    color: #e8efeb;
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+}
+
+QLabel#guionItemDetail {
+    color: #78877f;
+    font-size: 10px;
+    background: transparent;
+}
+
+QPushButton#guionRemoveBtn {
+    background: transparent;
+    color: #718078;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 17px;
+    padding: 0px;
+}
+
+QPushButton#guionRemoveBtn:hover {
+    color: #fca5a5;
+    background-color: #3a201f;
+    border-color: #6b3835;
+}
+
+QLabel#guionRowArrow {
+    color: #607068;
+    font-size: 20px;
+    background: transparent;
+}
+
+/* Selectores y vista de versículos del módulo Biblia */
+QLabel#bibleSelectorLabel {
+    color: #81958b;
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    background: transparent;
+}
+
+QComboBox#bibleSelectorCombo {
+    background-color: #111715;
+    color: #edf3ef;
+    border: 1px solid #2d3b34;
+    border-radius: 5px;
+    min-height: 34px;
+    padding: 2px 9px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QComboBox#bibleSelectorCombo:hover,
+QComboBox#bibleSelectorCombo:focus {
+    border-color: #5da98c;
+}
+
+QComboBox#bibleSelectorCombo QAbstractItemView {
+    background-color: #171e1b;
+    color: #edf3ef;
+    selection-background-color: #244235;
+    selection-color: #ffffff;
+}
+
+QLabel#bibleBookSection {
+    color: #79cbb0;
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    background: transparent;
+}
+
+QLabel#bibleChapterHeading {
+    color: #f0f3f1;
+    font-family: "Times New Roman", Georgia, serif;
+    font-size: 19px;
+    font-weight: bold;
+    background: transparent;
+}
+
+QLabel#bibleVerseCount {
+    color: #71847a;
+    font-size: 10px;
+    background: transparent;
+}
+
+QLineEdit#bibleVerseSearch {
+    background-color: #111715;
+    color: #edf3ef;
+    border: 1px solid #2d3b34;
+    border-radius: 5px;
+    min-height: 30px;
+    padding: 3px 9px;
+    font-size: 11px;
+}
+
+QLineEdit#bibleVerseSearch:focus {
+    border-color: #5da98c;
+}
+
+QComboBox#bibleVerseCombo {
+    background-color: #111715;
+    color: #edf3ef;
+    border: 1px solid #2d3b34;
+    border-radius: 5px;
+    min-width: 130px;
+    min-height: 30px;
+    padding: 3px 8px;
+    font-size: 11px;
+}
+
+QComboBox#bibleVerseCombo:hover,
+QComboBox#bibleVerseCombo:focus {
+    border-color: #5da98c;
+}
+
+QListWidget#bibleVerseList {
+    background-color: transparent;
+    border: none;
+}
+
+QListWidget#bibleVerseList::item {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+}
+
+QListWidget#bibleVerseList::item:hover {
+    background-color: #17211c;
+    border-color: #2e4639;
+}
+
+QListWidget#bibleVerseList::item:selected {
+    background-color: #1b2b25;
+    border-color: #4a9b7c;
+}
+
+QWidget#bibleVersePreviewRow {
+    background-color: #151d19;
+    border: 1px solid #283830;
+    border-radius: 5px;
+}
+
+QWidget#bibleVersePreviewRow:hover {
+    background-color: #19241e;
+    border-color: #3a604d;
+}
+
+QWidget#bibleVersePreviewRow[selected="true"] {
+    background-color: #1b2b25;
+    border-color: #4a9b7c;
+}
+
+QLabel#bibleVerseNumber {
+    color: #70d7bd;
+    font-size: 11px;
+    font-weight: bold;
+    background: transparent;
+}
+
+QLabel#bibleVerseText {
+    color: #dce5e0;
+    font-family: "Times New Roman", Georgia, serif;
+    font-size: 13px;
+    background: transparent;
+}
+
 /* Botón estilo píldora para agregar al guión */
 QPushButton#addToGuionBtn {
     background-color: #2563eb;
@@ -169,14 +551,20 @@ QPushButton#subtleCtrlBtnDanger:hover {
     border: 1px solid #991b1b;
 }
 
-/* Pantalla de Proyección OBS */
-QFrame#obsContainerFrame {
+/* Vista de salida de proyección nativa */
+QFrame#projectionOutputFrame {
     background-color: #000000;
     border: 2px solid #27272a;
     border-radius: 8px;
 }
 
-QLabel#obsLabelTitle {
+QLabel#outputImageThumbnail {
+    background-color: #111715;
+    border: 2px solid #d5e0da;
+    border-radius: 6px;
+}
+
+QLabel#projectionLabelTitle {
     color: #52525b;
     font-size: 10px;
     font-weight: bold;
@@ -184,7 +572,7 @@ QLabel#obsLabelTitle {
     background: transparent;
 }
 
-QLabel#obsFooterTitle {
+QLabel#projectionFooterTitle {
     color: #71717a;
     font-size: 12px;
     font-weight: 500;
@@ -208,6 +596,159 @@ QPushButton#helpRoundBtn:hover {
     background-color: #3f3f46;
     color: #ffffff;
     border: 1px solid #52525b;
+}
+
+/* Panel lateral de salidas y controles de proyección */
+QFrame#projectionWorkspaceFrame {
+    background-color: #101614;
+    border: 1px solid #2a3631;
+    border-radius: 8px;
+}
+
+QFrame#projectionControlPanel {
+    background-color: #141a17;
+    border: 1px solid #27342e;
+    border-radius: 6px;
+}
+
+QLabel#projectionSectionLabel {
+    color: #9aaca3;
+    font-size: 11px;
+    font-weight: bold;
+    background: transparent;
+}
+
+QFrame#projectionScreenRow {
+    background-color: #171e1b;
+    border: 1px solid #29342f;
+    border-radius: 5px;
+}
+
+QFrame#projectionScreenRow[active="true"] {
+    background-color: #182820;
+    border: 1px solid #315c4a;
+}
+
+QLabel#projectionScreenIcon {
+    color: #b7c8c0;
+    background-color: #252e2a;
+    border: 1px solid #34413a;
+    border-radius: 5px;
+    font-size: 16px;
+}
+
+QLabel#projectionScreenName {
+    color: #edf3ef;
+    font-size: 11px;
+    font-weight: bold;
+    background: transparent;
+}
+
+QLabel#projectionScreenDetails {
+    color: #8d9d95;
+    font-size: 9px;
+    background: transparent;
+}
+
+QCheckBox#projectionScreenToggle {
+    background: transparent;
+    spacing: 0;
+}
+
+QCheckBox#projectionScreenToggle::indicator {
+    width: 34px;
+    height: 18px;
+    background-color: #3a4440;
+    border: 1px solid #56625c;
+    border-radius: 9px;
+}
+
+QCheckBox#projectionScreenToggle::indicator:checked {
+    background-color: #62c7aa;
+    border-color: #62c7aa;
+}
+
+QFrame#projectionControlsDivider {
+    color: #293630;
+    background-color: #293630;
+    border: none;
+    max-height: 1px;
+}
+
+QPushButton#projectionActionBtn {
+    background-color: #1b2420;
+    color: #e4ece8;
+    border: 1px solid #34433b;
+    border-radius: 5px;
+    min-height: 40px;
+    padding: 7px 6px;
+    font-size: 11px;
+}
+
+QPushButton#projectionActionBtn:hover {
+    background-color: #24312b;
+    border-color: #528b74;
+}
+
+QToolButton#projectionTileBtn {
+    background-color: #141a17;
+    color: #dce5e0;
+    border: 1px solid #34413a;
+    border-radius: 5px;
+    min-width: 48px;
+    min-height: 56px;
+    padding: 4px 2px;
+    font-size: 9px;
+    font-weight: 600;
+    icon-size: 18px;
+}
+
+QToolButton#projectionTileBtn:hover {
+    background-color: #202b25;
+    border-color: #528b74;
+}
+
+QPushButton#projectionDangerBtn {
+    background-color: #351d1b;
+    color: #ffc0b8;
+    border: 1px solid #78433c;
+    border-radius: 5px;
+    min-height: 44px;
+    padding: 8px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+QPushButton#projectionDangerBtn:hover {
+    background-color: #512622;
+    border-color: #a45b50;
+}
+
+QPushButton#fontStepBtn {
+    background-color: #1b2420;
+    color: #e4ece8;
+    border: 1px solid #34433b;
+    border-radius: 5px;
+    min-width: 36px;
+    min-height: 34px;
+    font-size: 17px;
+    font-weight: bold;
+}
+
+QPushButton#fontStepBtn:hover {
+    background-color: #24312b;
+    border-color: #528b74;
+}
+
+QPushButton#fontSizeIndicatorBtn {
+    background-color: transparent;
+    color: #70d7bd;
+    border: none;
+    min-width: 24px;
+    min-height: 34px;
+    padding: 0px;
+    font-size: 11px;
+    font-weight: bold;
 }
 
 /* Scrollbars Oscuros */

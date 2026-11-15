@@ -1,10 +1,11 @@
-# Cerebro de Proyección Multimedia - Iglesia App ⛪🎥
+# Station Selah | Proyección Multimedia
 
 Este es un sistema de proyección multimedia elegante, ligero y rápido diseñado específicamente para pequeñas iglesias. Funciona de manera similar a sistemas profesionales (como ProPresenter o EasyWorship), permitiendo gestionar canciones (cantos), pasajes bíblicos, imágenes y presentaciones de PowerPoint para proyectarlos en un segundo monitor, proyector o capturarlos directamente desde OBS Studio.
 
 ---
 
 ## 🛠️ Stack Tecnológico Utilizado
+
 - **Lenguaje Base**: Python (3.13+)
 - **Interfaz Gráfica (UI)**: PyQt6
 - **Estilos Visuales**: QSS (Qt Style Sheets) - Hoja de estilo en modo oscuro premium
@@ -15,6 +16,7 @@ Este es un sistema de proyección multimedia elegante, ligero y rápido diseñad
 ---
 
 ## 📂 Estructura del Proyecto
+
 ```text
 iglesia-app/
 ├── main.py              # Código principal y diseño de la interfaz de usuario en PyQt6
@@ -41,6 +43,7 @@ iglesia-app/
 ## ✨ Características Principales
 
 ### 1. Panel de Vista Previa (Izquierda)
+
 - Es **estático e inamovible**. Muestra el contenido detallado de lo que tienes seleccionado en la biblioteca.
 - Si seleccionas un canto, muestra las estrofas.
 - Si seleccionas un PowerPoint, lista sus diapositivas.
@@ -48,17 +51,19 @@ iglesia-app/
 - **Flujo en Vivo**: Al hacer clic sobre cualquier elemento de esta lista, se envía y proyecta inmediatamente a la pantalla.
 
 ### 2. Biblioteca y Cerebro de Control (Arriba a la Derecha)
+
 - **Cantos**: Buscador predictivo en tiempo real. Botón para crear/agregar canciones completas a la base de datos local de SQLite de forma permanente.
 - **Biblias**: Filtros desplegables para seleccionar rápidamente `Libro` -> `Capítulo` -> `Versículo`, buscador de palabras clave y opción para añadir capítulos completos al guion del culto.
 - **Imágenes**: Importa cualquier imagen local (`.png`, `.jpg`, `.jpeg`). La aplicación copiará la imagen a la carpeta `imported_images/` para que esté disponible de forma permanente.
-- **PPTX**: Importador de presentaciones PowerPoint. 
+- **PPTX**: Importador de presentaciones PowerPoint.
   - Si el equipo tiene PowerPoint instalado, exportará las diapositivas con la calidad nativa original.
   - Si no tiene PowerPoint, extraerá el texto de cada diapositiva y generará diapositivas oscuras limpias de forma automática.
-- **Guiones**: Cuatro columnas paralelas correspondientes a `CANTOS`, `BIBLIA`, `IMÁGENES` y `PPTX` añadidas para el servicio actual. 
+- **Guiones**: Cuatro columnas paralelas correspondientes a `CANTOS`, `BIBLIA`, `IMÁGENES` y `PPTX` añadidas para el servicio actual.
   - El guion inicia vacío cada vez que abres el sistema.
   - Al hacer clic en un elemento del guion, este se carga en el panel izquierdo (Preview) listo para ser proyectado en el culto.
 
 ### 3. Ventana de Proyección y Controles (Abajo a la Derecha)
+
 - Muestra una miniatura en tiempo real de lo que está viendo el público.
 - **Activar Ventana de Proyección**: Abre una ventana independiente sin bordes. Arrástrala a tu proyector o segundo monitor y haz doble clic para ponerla en pantalla completa (o configúrala como entrada en tu OBS).
 - **Negro Total (Black)**: Pone la pantalla de proyección completamente en negro inmediatamente.
