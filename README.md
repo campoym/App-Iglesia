@@ -12,6 +12,7 @@ Este es un sistema de proyección multimedia elegante, ligero y rápido diseñad
 - **Base de Datos**: SQLite (almacenamiento local para cantos, Biblia, y referencias multimedia)
 - **Procesamiento de Presentaciones**: `python-pptx` + Integración COM de Windows (`win32com`) para conversión nativa de PowerPoint
 - **Manejo de Imágenes**: Pillow (PIL)
+- **Control remoto QR**: `qrcode[pil]`
 
 ---
 
@@ -37,6 +38,22 @@ iglesia-app/
    ```bash
    python main.py
    ```
+
+## Control remoto en red local
+
+1. Abre **Control remoto · QR** en el panel de proyección.
+2. Selecciona la interfaz privada de la red Wi-Fi/Ethernet y pulsa **Iniciar acceso**.
+3. Escanea el QR desde un dispositivo conectado a esa misma red.
+4. Busca cantos, selecciónalos para proyectar y usa los controles anterior/siguiente, limpiar, restaurar y pantalla negra.
+5. Pulsa **Detener** en la ventana de control cuando termines; esto revoca las sesiones emparejadas.
+
+El servidor se liga solo a la IP privada seleccionada, restringe las solicitudes a su subred, usa un QR de emparejamiento temporal y no permite comandos fuera de una lista explícita. No configures reenvío de puertos ni publiques el servicio en Internet. El tráfico local usa HTTP; utiliza una red privada de confianza y protegida con WPA2/WPA3.
+
+Para instalar el generador de QR en el entorno de desarrollo:
+
+```bash
+python -m pip install "qrcode[pil]"
+```
 
 ---
 

@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101614">
+  <title>Station Selah · Control remoto</title>
+  <style nonce="__CSP_NONCE__">
+    :root { color-scheme: dark; font-family: "Segoe UI", Arial, sans-serif; background: #101614; color: #edf3ef; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #101614; }
+    .hidden { display: none; }
+    button, input, select { font: inherit; }
+    button { min-height: 46px; border: 1px solid #35443c; border-radius: 6px; background: #1a241e; color: #e7efea; font-size: 14px; font-weight: 600; cursor: pointer; }
+    button:active { background: #263a2e; }
+    button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #70cba1; outline-offset: 2px; }
+    #pairing { width: min(100% - 32px, 480px); margin: 24px auto; padding: 20px; border: 1px solid #2a3931; border-radius: 8px; background: #141c18; color: #abb9b1; }
+    #status { min-height: 20px; margin: 0; padding: 9px 16px; border-bottom: 1px solid #25312b; color: #9dc8ad; font-size: 12px; }
+    .app-header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 8px 16px; border-bottom: 1px solid #293830; background: #111815; }
+    .menu-button { width: 42px; min-height: 42px; font-size: 20px; }
+    .header-nav { display: flex; gap: 6px; margin-left: auto; }
+    .header-step { width: 42px; min-height: 42px; font-size: 18px; }
+    .mark { width: 36px; height: 36px; border: 1px solid #355846; border-radius: 7px; display: grid; place-items: center; color: #a6dfc2; font-weight: 700; }
+    .brand { margin: 0; font-size: 14px; letter-spacing: .04em; }
+    .subtitle { margin: 3px 0 0; color: #91a097; font-size: 11px; }
+    .drawer-backdrop { position: fixed; inset: 0; z-index: 8; background: rgb(0 0 0 / 58%); }
+    .drawer { position: fixed; inset: 0 auto 0 0; z-index: 9; display: flex; flex-direction: column; width: min(82vw, 310px); padding: 18px 14px; border-right: 1px solid #34463c; background: #121a16; transform: translateX(-105%); transition: transform 180ms ease-out; }
+    .drawer.open { transform: translateX(0); }
+    .drawer-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; color: #91a097; font-size: 10px; font-weight: 700; letter-spacing: .09em; }
+    .drawer-close { width: 38px; min-height: 38px; font-size: 20px; }
+    .drawer-nav { display: grid; gap: 6px; }
+    .drawer-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0 12px; text-align: left; }
+    .drawer-item[aria-current="page"] { border-color: #547967; background: #202923; color: #bce3cb; }
+    .drawer-icon { width: 22px; color: #a9bbb2; text-align: center; font-size: 17px; }
+    .drawer-note { margin-top: auto; padding: 12px 4px 2px; border-top: 1px solid #293830; color: #718078; font-size: 11px; line-height: 1.5; }
+    main { width: min(100%, 620px); margin: 0 auto; padding: 16px; }
+    .page-title { margin: 4px 0 16px; color: #edf3ef; font-size: 20px; font-weight: 600; }
+    .panel { margin-bottom: 12px; padding: 16px; border: 1px solid #2a3931; border-radius: 7px; background: #141c18; }
+    .panel-title { margin: 0 0 12px; color: #aab9b1; font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+    label { display: block; margin: 12px 0 7px; color: #aab9b1; font-size: 12px; font-weight: 600; }
+    input, select { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid #35443c; border-radius: 6px; background: #0e1411; color: #f3f6f4; font-size: 15px; }
+    .results { display: grid; gap: 7px; margin-top: 10px; }
+    .result { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 12px; text-align: left; }
+    .result-title { color: #eef4f0; }
+    .result-detail { display: block; margin-top: 4px; color: #8b9b91; font-size: 11px; font-weight: 400; line-height: 1.4; }
+    .choose { color: #a6dfc2; white-space: nowrap; font-size: 12px; }
+    .transport { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .utility { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .font-size-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .quick-images { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .quick-image { min-height: 72px; }
+    .select-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .select-field { min-width: 0; }
+    .select-field label { min-height: 28px; }
+    #bible-book-field { grid-column: 1 / -1; }
+    .verse-text { display: block; margin-top: 5px; color: #b7c5bd; font-family: Georgia, serif; font-size: 14px; font-weight: 400; line-height: 1.4; }
+    .script-meta { display: block; margin-top: 4px; color: #899990; font-size: 11px; font-weight: 400; }
+    .danger { border-color: #70443e; background: #2b1d1b; color: #f0c4bd; }
+    .muted { color: #8b9b91; font-size: 12px; }
+    @media (prefers-reduced-motion: reduce) { .drawer { transition: none; } }
+    @media (min-width: 700px) { main { padding: 22px; } .app-header { padding-inline: max(22px, calc((100vw - 620px) / 2)); } }
+  </style>
+</head>
+<body>
+  <section id="pairing" class="hidden" role="status">Este enlace requiere emparejamiento desde el QR activo en Station Selah.</section>
+  <div id="application" class="hidden">
+    <header class="app-header">
+      <button id="menu-open" class="menu-button" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="drawer">☰</button>
+      <div class="mark" aria-hidden="true">S</div>
+      <div><h1 class="brand">STATION SELAH</h1><p class="subtitle">Control remoto local</p></div>
+      <div class="header-nav" aria-label="Navegación de proyección">
+        <button class="header-step" type="button" data-command="previous" aria-label="Anterior" title="Anterior">‹</button>
+        <button class="header-step" type="button" data-command="next" aria-label="Siguiente" title="Siguiente">›</button>
+      </div>
+    </header>
+    <p id="status" role="status">Conectando…</p>
+    <div id="backdrop" class="drawer-backdrop hidden"></div>
+    <nav id="drawer" class="drawer" aria-label="Navegación" aria-hidden="true">
+      <div class="drawer-heading"><span>MENÚ</span><button id="menu-close" class="drawer-close" type="button" aria-label="Cerrar menú">×</button></div>
+      <div class="drawer-nav">
+        <button class="drawer-item" type="button" data-view="home" aria-current="page"><span class="drawer-icon">⌂</span>Inicio</button>
+        <button class="drawer-item" type="button" data-view="songs"><span class="drawer-icon">♫</span>Cantos</button>
+        <button class="drawer-item" type="button" data-view="texts"><span class="drawer-icon">▤</span>Textos</button>
+        <button class="drawer-item" type="button" data-view="images"><span class="drawer-icon">▧</span>Imágenes</button>
+        <button class="drawer-item" type="button" data-view="script"><span class="drawer-icon">☷</span>Guion</button>
+        <button class="drawer-item" type="button" data-view="controls"><span class="drawer-icon">◉</span>Proyección</button>
+      </div>
+      <p class="drawer-note">Conexión limitada a la red local emparejada.</p>
+    </nav>
+    <main>
+      <section id="view-home" class="view">
+        <h2 class="page-title">Control de servicio</h2>
+        <div class="panel">
+          <h3 class="panel-title">IMÁGENES RÁPIDAS</h3>
+          <div class="quick-images">
+            <button class="quick-image" type="button" data-command="project_welcome">Bienvenida</button>
+            <button class="quick-image" type="button" data-command="project_farewell">Despedida</button>
+          </div>
+        </div>
+      </section>
+      <section id="view-songs" class="view hidden">
+        <h2 class="page-title">Cantos</h2>
+        <div class="panel">
+          <label for="song-search">Buscar canto</label>
+          <input id="song-search" type="search" maxlength="80" autocomplete="off" placeholder="Título o frase del canto">
+          <div id="song-results" class="results" aria-live="polite"></div>
+        </div>
+      </section>
+      <section id="view-texts" class="view hidden">
+        <h2 class="page-title">Textos bíblicos</h2>
+        <div class="panel">
+          <div class="select-row">
+            <div class="select-field">
+              <label for="bible-version">Versión</label>
+              <select id="bible-version">
+                <option>RVR60</option><option>NVI</option><option>RV1569</option><option>DHH</option>
+              </select>
+            </div>
+            <div id="bible-book-field" class="select-field">
+              <label for="bible-book">Libro</label>
+              <select id="bible-book" disabled><option value="">Selecciona libro</option></select>
+            </div>
+            <div class="select-field">
+              <label for="bible-chapter">Capítulo</label>
+              <select id="bible-chapter" disabled><option value="">Capítulo</option></select>
+            </div>
+            <div class="select-field">
+              <label for="bible-verse">Versículo</label>
+              <select id="bible-verse" disabled><option value="">Versículo</option></select>
+            </div>
+          </div>
+          <div id="bible-verse-cards" class="results" aria-live="polite"></div>
+          <label for="bible-search">Buscar cita o texto</label>
+          <input id="bible-search" type="search" maxlength="80" autocomplete="off" placeholder="Juan 3:16 o una frase">
+          <div id="bible-results" class="results" aria-live="polite"></div>
+        </div>
+      </section>
+      <section id="view-images" class="view hidden">
+        <h2 class="page-title">Imágenes</h2>
+        <div class="panel">
+          <h3 class="panel-title">ACCESOS RÁPIDOS</h3>
+          <div class="quick-images">
+            <button class="quick-image" type="button" data-command="project_welcome">Bienvenida</button>
+            <button class="quick-image" type="button" data-command="project_farewell">Despedida</button>
+          </div>
+          <p class="muted">Las imágenes deben estar configuradas en Station Selah.</p>
+        </div>
+      </section>
+      <section id="view-controls" class="view hidden">
+        <h2 class="page-title">Proyección</h2>
+        <div class="panel">
+          <div class="utility">
+            <button type="button" data-command="restore">Restaurar</button>
+            <button type="button" data-command="clear">Limpiar texto</button>
+            <button type="button" class="danger" data-command="black">Pantalla negra</button>
+          </div>
+          <div class="font-size-controls">
+            <button type="button" data-command="font_decrease">A−  Reducir letra</button>
+            <button type="button" data-command="font_increase">A+  Agrandar letra</button>
+          </div>
+        </div>
+      </section>
+      <section id="view-script" class="view hidden">
+        <h2 class="page-title">Guion</h2>
+        <div class="panel">
+          <h3 class="panel-title">ELEMENTOS DEL SERVICIO</h3>
+          <div id="script-results" class="results" aria-live="polite"></div>
+          <p id="script-empty" class="muted hidden">El Guion está vacío.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script nonce="__CSP_NONCE__">
+    const statusLabel = document.getElementById('status');
+    const pairingPanel = document.getElementById('pairing');
+    const application = document.getElementById('application');
+    const drawer = document.getElementById('drawer');
+    const backdrop = document.getElementById('backdrop');
+    const menuOpen = document.getElementById('menu-open');
+    let songSearchTimer;
+    let bibleSearchTimer;
+    let bibleVerses = [];
+
+    async function request(path, options = {}) {
+      const response = await fetch(path, {
+        ...options,
+        credentials: 'same-origin',
+        headers: { ...(options.headers || {}), ...(options.body ? { 'Content-Type': 'application/json' } : {}) }
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'No se pudo completar la solicitud.');
+      return payload;
+    }
+
+    function setConnected() {
+      pairingPanel.classList.add('hidden');
+      application.classList.remove('hidden');
+      statusLabel.textContent = 'Conectado a Station Selah en esta red.';
+    }
+
+    function setDrawerOpen(open) {
+      drawer.classList.toggle('open', open);
+      drawer.setAttribute('aria-hidden', String(!open));
+      menuOpen.setAttribute('aria-expanded', String(open));
+      backdrop.classList.toggle('hidden', !open);
+    }
+
+    function showView(name) {
+      document.querySelectorAll('.view').forEach((view) => {
+        view.classList.toggle('hidden', view.id !== `view-${name}`);
+      });
+      document.querySelectorAll('[data-view]').forEach((button) => {
+        if (button.dataset.view === name) button.setAttribute('aria-current', 'page');
+        else button.removeAttribute('aria-current');
+      });
+      setDrawerOpen(false);
+      if (name === 'texts') loadBibleBooks();
+      if (name === 'script') loadScript();
+    }
+
+    async function initialize() {
+      const fragment = new URLSearchParams(location.hash.slice(1));
+      const pairingCode = fragment.get('pair');
+      if (pairingCode) {
+        history.replaceState(null, '', location.pathname);
+        try {
+          await request('/api/pair', { method: 'POST', body: JSON.stringify({ code: pairingCode }) });
+          setConnected();
+          return;
+        } catch (error) {
+          statusLabel.textContent = error.message;
+          pairingPanel.classList.remove('hidden');
+          return;
+        }
+      }
+
+      try {
+        await request('/api/state');
+        setConnected();
+      } catch (_error) {
+        statusLabel.textContent = 'Escanea el QR activo para emparejar este dispositivo.';
+        pairingPanel.classList.remove('hidden');
+      }
+    }
+
+    function showEmptyResult(container) {
+      const empty = document.createElement('p');
+      empty.className = 'muted';
+      empty.textContent = 'Sin resultados.';
+      container.append(empty);
+    }
+
+    async function searchSongs() {
+      const query = document.getElementById('song-search').value.trim();
+      const results = document.getElementById('song-results');
+      results.replaceChildren();
+      if (query.length < 2) return;
+      try {
+        const payload = await request(`/api/songs?q=${encodeURIComponent(query)}`);
+        if (!payload.songs.length) {
+          showEmptyResult(results);
+          return;
+        }
+        for (const song of payload.songs) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'result';
+          const details = document.createElement('span');
+          const title = document.createElement('span');
+          title.className = 'result-title';
+          title.textContent = song.title;
+          const category = document.createElement('span');
+          category.className = 'result-detail';
+          category.textContent = song.category;
+          details.append(title, category);
+          const select = document.createElement('span');
+          select.className = 'choose';
+          select.textContent = 'Proyectar';
+          button.append(details, select);
+          button.addEventListener('click', () => sendCommand('select_song', { song_id: song.id }));
+          results.append(button);
+        }
+      } catch (error) {
+        statusLabel.textContent = error.message;
+      }
+    }
+
+    async function searchBible() {
+      const query = document.getElementById('bible-search').value.trim();
+      const version = document.getElementById('bible-version').value;
+      const results = document.getElementById('bible-results');
+      results.replaceChildren();
+      if (query.length < 2) return;
+      try {
+        const params = new URLSearchParams({ q: query, version });
+        const payload = await request(`/api/bible?${params.toString()}`);
+        if (!payload.verses.length) {
+          showEmptyResult(results);
+          return;
+        }
+        for (const verse of payload.verses) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'result';
+          const details = document.createElement('span');
+          const reference = document.createElement('span');
+          reference.className = 'result-title';
+          reference.textContent = `${verse.book} ${verse.chapter}:${verse.verse}`;
+          const text = document.createElement('span');
+          text.className = 'result-detail';
+          text.textContent = verse.text;
+          details.append(reference, text);
+          const select = document.createElement('span');
+          select.className = 'choose';
+          select.textContent = 'Proyectar';
+          button.append(details, select);
+          button.addEventListener('click', () => sendCommand('select_verse', {
+            book: verse.book,
+            chapter: verse.chapter,
+            verse: verse.verse,
+            version: verse.version
+          }));
+          results.append(button);
+        }
+      } catch (error) {
+        statusLabel.textContent = error.message;
+      }
+    }
+
+    async function loadBibleBooks() {
+      const version = document.getElementById('bible-version').value;
+      const bookSelect = document.getElementById('bible-book');
+      const chapterSelect = document.getElementById('bible-chapter');
+      const verseSelect = document.getElementById('bible-verse');
+      bookSelect.replaceChildren(new Option('Selecciona libro', ''));
+      chapterSelect.replaceChildren(new Option('Capítulo', ''));
+      verseSelect.replaceChildren(new Option('Versículo', ''));
+      chapterSelect.disabled = true;
+      verseSelect.disabled = true;
+      bookSelect.disabled = true;
+
+      try {
+        const payload = await request(`/api/bible/books?version=${encodeURIComponent(version)}`);
+        payload.books.forEach((book) => bookSelect.add(new Option(book, book)));
+        bookSelect.disabled = payload.books.length === 0;
+        if (payload.books.length) {
+          bookSelect.value = payload.books.includes('Juan') ? 'Juan' : payload.books[0];
+          await loadBibleChapters();
+        }
+      } catch (error) {
+        statusLabel.textContent = error.message;
+      }
+    }
+
+    async function loadBibleChapters() {
+      const version = document.getElementById('bible-version').value;
+      const book = document.getElementById('bible-book').value;
+      const chapterSelect = document.getElementById('bible-chapter');
+      const verseSelect = document.getElementById('bible-verse');
+      chapterSelect.replaceChildren(new Option('Capítulo', ''));
+      verseSelect.replaceChildren(new Option('Versículo', ''));
+      verseSelect.disabled = true;
+      chapterSelect.disabled = true;
+      if (!book) return;
+
+      try {
+        const params = new URLSearchParams({ version, book });
+        const payload = await request(`/api/bible/chapters?${params.toString()}`);
+        payload.chapters.forEach((chapter) => {
+          chapterSelect.add(new Option(`Capítulo ${chapter}`, chapter));
+        });
+        chapterSelect.disabled = payload.chapters.length === 0;
+        if (payload.chapters.length) {
+          chapterSelect.value = String(payload.chapters[0]);
+          await loadBibleVerses();
+        }
+      } catch (error) {
+        statusLabel.textContent = error.message;
+      }
+    }
+
+    async function loadBibleVerses() {
+      const version = document.getElementById('bible-version').value;
+      const book = document.getElementById('bible-book').value;
+      const chapter = document.getElementById('bible-chapter').value;
+      const verseSelect = document.getElementById('bible-verse');
+      const cards = document.getElementById('bible-verse-cards');
+      verseSelect.replaceChildren(new Option('Versículo', ''));
+      cards.replaceChildren();
+      verseSelect.disabled = true;
+      bibleVerses = [];
+      if (!book || !chapter) return;
+
+      try {
+        const params = new URLSearchParams({ version, book, chapter });
+        const payload = await request(`/api/bible/verses?${params.toString()}`);
+        bibleVerses = payload.verses;
+        for (const verse of bibleVerses) {
+          verseSelect.add(new Option(`Versículo ${verse.verse}`, verse.verse));
+
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'result';
+          const details = document.createElement('span');
+          const reference = document.createElement('span');
+          reference.className = 'result-title';
+          reference.textContent = `${verse.verse}.`;
+          const text = document.createElement('span');
+          text.className = 'verse-text';
+          text.textContent = verse.text;
+          details.append(reference, text);
+          const action = document.createElement('span');
+          action.className = 'choose';
+          action.textContent = 'Proyectar';
+          button.append(details, action);
+          button.addEventListener('click', () => projectVerse(verse));
+          cards.append(button);
+        }
+        verseSelect.disabled = bibleVerses.length === 0;
+      } catch (error) {
+        statusLabel.textContent = error.message;
+      }
+    }
+
+    function projectVerse(verse) {
+      document.getElementById('bible-verse').value = String(verse.verse);
+      sendCommand('select_verse', {
+        book: document.getElementById('bible-book').value,
+        chapter: Number(document.getElementById('bible-chapter').value),
+        verse: Number(verse.verse),
+        version: document.getElementById('bible-version').value
+      });
+    }
+
+    async function loadScript() {
+      const results = document.getElementById('script-results');
+      const empty = document.getElementById('script-empty');
+      results.replaceChildren();
+      empty.classList.add('hidden');
+      try {
+        const payload = await request('/api/guion');
+        if (!payload.items.length) {
+          empty.classList.remove('hidden');
+          return;
+        }
+        for (const item of payload.items) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'result';
+          const details = document.createElement('span');
+          const title = document.createElement('span');
+          title.className = 'result-title';
+          title.textContent = item.title;
+          const meta = document.createElement('span');
+          meta.className = 'script-meta';
+          meta.textContent = `${item.type.toUpperCase()} · ${item.detail}`;
+          details.append(title, meta);
+          const action = document.createElement('span');
+          action.className = 'choose';
+          action.textContent = 'Proyectar';
+          button.append(details, action);
+          button.addEventListener('click', () => {
+            sendCommand('select_script_item', { index: item.index });
+          });
+          results.append(button);
+        }
+      } catch (error) {
+        statusLabel.textContent = error.message;
+      }
+    }
+
+    async function sendCommand(action, extra = {}) {
+      try {
+        const result = await request('/api/command', {
+          method: 'POST',
+          body: JSON.stringify({ action, ...extra })
+        });
+        statusLabel.textContent = result.message;
+      } catch (error) {
+        statusLabel.textContent = error.message;
+        if (error.message.includes('Escanea')) {
+          pairingPanel.classList.remove('hidden');
+          application.classList.add('hidden');
+        }
+      }
+    }
+
+    menuOpen.addEventListener('click', () => setDrawerOpen(true));
+    document.getElementById('menu-close').addEventListener('click', () => setDrawerOpen(false));
+    backdrop.addEventListener('click', () => setDrawerOpen(false));
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') setDrawerOpen(false);
+    });
+    document.querySelectorAll('[data-view]').forEach((button) => {
+      button.addEventListener('click', () => showView(button.dataset.view));
+    });
+
+    document.getElementById('song-search').addEventListener('input', () => {
+      clearTimeout(songSearchTimer);
+      songSearchTimer = setTimeout(searchSongs, 250);
+    });
+    document.getElementById('bible-search').addEventListener('input', () => {
+      clearTimeout(bibleSearchTimer);
+      bibleSearchTimer = setTimeout(searchBible, 250);
+    });
+    document.getElementById('bible-version').addEventListener('change', searchBible);
+    document.getElementById('bible-version').addEventListener('change', loadBibleBooks);
+    document.getElementById('bible-book').addEventListener('change', loadBibleChapters);
+    document.getElementById('bible-chapter').addEventListener('change', loadBibleVerses);
+    document.getElementById('bible-verse').addEventListener('change', () => {
+      const verse = bibleVerses.find((item) => String(item.verse) === document.getElementById('bible-verse').value);
+      if (verse) projectVerse(verse);
+    });
+    document.querySelectorAll('[data-command]').forEach((button) => {
+      button.addEventListener('click', () => sendCommand(button.dataset.command));
+    });
+    initialize();
+  </script>
+</body>
+</html>

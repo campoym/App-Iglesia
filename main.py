@@ -7,7 +7,10 @@ import shutil
 import sqlite3
 import re
 import unicodedata
+import ipaddress
+import io
 from html import escape as escape_html
+import qrcode
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -16,12 +19,14 @@ from PyQt6.QtWidgets import (
     QDialog, QTextEdit, QScrollArea, QComboBox, QSizePolicy, QMenu, QCheckBox,
     QToolButton, QStyle
 )
-from PyQt6.QtCore import Qt, QSize, QTimer, QPoint
+from PyQt6.QtCore import Qt, QSize, QTimer, QPoint, QObject, pyqtSignal
 from PyQt6.QtGui import QPixmap, QColor, QShortcut, QKeySequence, QIcon
+from PyQt6.QtNetwork import QNetworkInterface
 
 import database
 import pptx_helper
 import pdf_helper
+from remote_server import LANRemoteServer
 
 
 def is_frozen_app():
@@ -1782,6 +1787,216 @@ class SongEditorDialog(QDialog):
         self.accept()
 
 
+class RemoteCommandBridge(QObject):
+    """Entrega comandos HTTP al hilo de la interfaz Qt."""
+    command_requested = pyqtSignal(dict)
+
+
+class RemoteControlDialog(QDialog):
+    """Gestiona el acceso remoto local y muestra el QR temporal de emparejamiento."""
+
+    def __init__(self, main_window):
+        super().__init__(main_window)
+        self.main_window = main_window
+        self.setWindowTitle("Station Selah · Control remoto")
+        self.setObjectName("remoteControlDialog")
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("Control remoto local")
+        title.setObjectName("remoteDialogTitle")
+        layout.addWidget(title)
+
+        description = QLabel(
+            "Conecta un teléfono o computadora en la misma red privada. "
+            "El QR es temporal y no habilita acceso desde Internet."
+        )
+        description.setObjectName("remoteDialogDescription")
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        interface_label = QLabel("INTERFAZ DE RED")
+        interface_label.setObjectName("remoteDialogLabel")
+        layout.addWidget(interface_label)
+
+        self.interface_combo = QComboBox()
+        self.interface_combo.setObjectName("remoteInterfaceCombo")
+        layout.addWidget(self.interface_combo)
+
+        self.qr_label = QLabel("Inicia el acceso para generar el QR.")
+        self.qr_label.setObjectName("remoteQrPreview")
+        self.qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.qr_label.setFixedSize(240, 240)
+        layout.addWidget(self.qr_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        self.url_input = QLineEdit()
+        self.url_input.setObjectName("remotePairingUrl")
+        self.url_input.setReadOnly(True)
+        self.url_input.setPlaceholderText("El enlace aparecerá aquí")
+        layout.addWidget(self.url_input)
+
+        self.status_label = QLabel("Servidor detenido")
+        self.status_label.setObjectName("remoteDialogStatus")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+
+        self.start_button = QPushButton("Iniciar acceso")
+        self.start_button.setObjectName("remoteStartButton")
+        self.start_button.clicked.connect(self._start_server)
+        action_row.addWidget(self.start_button)
+
+        self.copy_button = QPushButton("Copiar enlace")
+        self.copy_button.setObjectName("remoteSecondaryButton")
+        self.copy_button.clicked.connect(self._copy_url)
+        self.copy_button.setEnabled(False)
+        action_row.addWidget(self.copy_button)
+
+        self.rotate_button = QPushButton("Nuevo QR")
+        self.rotate_button.setObjectName("remoteSecondaryButton")
+        self.rotate_button.clicked.connect(self._rotate_pairing)
+        self.rotate_button.setEnabled(False)
+        action_row.addWidget(self.rotate_button)
+
+        self.stop_button = QPushButton("Detener")
+        self.stop_button.setObjectName("remoteStopButton")
+        self.stop_button.clicked.connect(self._stop_server)
+        self.stop_button.setEnabled(False)
+        action_row.addWidget(self.stop_button)
+        layout.addLayout(action_row)
+
+        self._status_timer = QTimer(self)
+        self._status_timer.setInterval(1000)
+        self._status_timer.timeout.connect(self._update_status)
+
+        self.refresh_interfaces()
+        if self.main_window.remote_server:
+            self._show_running_server(self.main_window.remote_server)
+
+    def refresh_interfaces(self):
+        active_server = self.main_window.remote_server
+        selected_address = active_server.host if active_server else ""
+        self.interface_combo.blockSignals(True)
+        self.interface_combo.clear()
+        interfaces = self.main_window._available_remote_interfaces()
+        for interface in interfaces:
+            label = (
+                f"{interface['name']} · {interface['address']}/"
+                f"{interface['network'].split('/')[-1]}"
+            )
+            self.interface_combo.addItem(label, interface)
+        selected_index = next(
+            (index for index in range(self.interface_combo.count())
+             if self.interface_combo.itemData(index)["address"] == selected_address),
+            0,
+        )
+        if self.interface_combo.count():
+            self.interface_combo.setCurrentIndex(selected_index)
+        self.interface_combo.blockSignals(False)
+        self.interface_combo.setEnabled(active_server is None)
+        self.start_button.setEnabled(
+            active_server is None and self.interface_combo.count() > 0)
+        if not interfaces and active_server is None:
+            self.status_label.setText(
+                "No se encontró una interfaz IPv4 privada activa."
+            )
+
+    def _start_server(self):
+        interface_data = self.interface_combo.currentData()
+        if not interface_data:
+            return
+        try:
+            server = self.main_window.start_remote_server(interface_data)
+        except (OSError, ValueError) as error:
+            self.status_label.setText(f"No se pudo iniciar: {error}")
+            return
+        self._show_running_server(server)
+
+    def _show_running_server(self, server):
+        self.interface_combo.setEnabled(False)
+        self.start_button.setEnabled(False)
+        self.copy_button.setEnabled(True)
+        self.rotate_button.setEnabled(True)
+        self.stop_button.setEnabled(True)
+        self.url_input.setText(server.pairing_url)
+        self._render_qr(server.pairing_url)
+        self._status_timer.start()
+        self._update_status()
+
+    def _render_qr(self, url):
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=6,
+            border=3,
+        )
+        qr.add_data(url)
+        qr.make(fit=True)
+        image = qr.make_image(fill_color="#15231b", back_color="#f2f6f3")
+        image_buffer = io.BytesIO()
+        image.save(image_buffer, format="PNG")
+        pixmap = QPixmap()
+        if pixmap.loadFromData(image_buffer.getvalue(), "PNG"):
+            self.qr_label.setPixmap(pixmap.scaled(
+                self.qr_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
+
+    def _rotate_pairing(self):
+        server = self.main_window.remote_server
+        if not server:
+            return
+        server.rotate_pairing_code()
+        self.url_input.setText(server.pairing_url)
+        self._render_qr(server.pairing_url)
+        self._update_status()
+
+    def _copy_url(self):
+        if self.url_input.text():
+            QApplication.clipboard().setText(self.url_input.text())
+            self.status_label.setText("Enlace temporal copiado.")
+
+    def _stop_server(self):
+        self._status_timer.stop()
+        self.main_window.stop_remote_server()
+        self.qr_label.setPixmap(QPixmap())
+        self.qr_label.setText("Acceso detenido")
+        self.url_input.clear()
+        self.copy_button.setEnabled(False)
+        self.rotate_button.setEnabled(False)
+        self.stop_button.setEnabled(False)
+        self.status_label.setText("Servidor detenido; sesiones revocadas.")
+        self.refresh_interfaces()
+
+    def _update_status(self):
+        server = self.main_window.remote_server
+        if not server:
+            self._status_timer.stop()
+            return
+        remaining = server.pairing_seconds_remaining
+        minutes, seconds = divmod(remaining, 60)
+        if remaining:
+            self.status_label.setText(
+                f"Activo solo en {server.host}. QR válido {minutes:02d}:{seconds:02d}; "
+                "los dispositivos emparejados siguen conectados hasta detener el acceso."
+            )
+        else:
+            self.status_label.setText(
+                "El QR expiró. Usa “Nuevo QR” para emparejar otro dispositivo."
+            )
+
+
+class RemoteCommandBridge(QObject):
+    """Entrega comandos HTTP al hilo de la interfaz Qt."""
+    command_requested = pyqtSignal(dict)
+
+
 # ---------------------------------------------------------------------------
 # Main window and UI bootstrap
 # ---------------------------------------------------------------------------
@@ -1807,6 +2022,16 @@ class MainWindow(QMainWindow):
         self.active_item_data = None
         self.projection_windows = {}
         self._is_external_obs_mode = False
+        self.remote_server = None
+        self.remote_control_dialog = None
+        self.remote_command_bridge = RemoteCommandBridge(self)
+        self.remote_command_bridge.command_requested.connect(
+            self._handle_remote_command)
+        self.remote_server = None
+        self.remote_control_dialog = None
+        self.remote_command_bridge = RemoteCommandBridge()
+        self.remote_command_bridge.command_requested.connect(
+            self._handle_remote_command)
 
         # Screen monitoring timer
         self._screen_monitor_timer = QTimer()
@@ -2036,6 +2261,17 @@ class MainWindow(QMainWindow):
         self.projection_outputs_layout.setContentsMargins(0, 0, 0, 0)
         self.projection_outputs_layout.setSpacing(6)
         controls_panel_layout.addWidget(projection_outputs_container)
+
+        self.remote_status_label = QLabel("CONTROL REMOTO · DETENIDO")
+        self.remote_status_label.setObjectName("projectionSectionLabel")
+        controls_panel_layout.addWidget(self.remote_status_label)
+
+        self.btn_remote_control = QPushButton("Control remoto · QR")
+        self.btn_remote_control.setObjectName("projectionActionBtn")
+        self.btn_remote_control.setToolTip(
+            "Conectar dispositivos en la misma red local")
+        self.btn_remote_control.clicked.connect(self.open_remote_control_dialog)
+        controls_panel_layout.addWidget(self.btn_remote_control)
 
         controls_divider = QFrame()
         controls_divider.setFrameShape(QFrame.Shape.HLine)
@@ -4828,6 +5064,185 @@ class MainWindow(QMainWindow):
         self.local_projection_widget.projection_title.setText("PROYECCIÓN")
         self._refresh_projection_outputs()
 
+    def _available_remote_interfaces(self):
+        """Lista solo interfaces activas con IPv4 privada y su subred."""
+        interfaces = []
+        seen_addresses = set()
+        for interface in QNetworkInterface.allInterfaces():
+            if not interface.flags() & QNetworkInterface.InterfaceFlag.IsUp:
+                continue
+            for entry in interface.addressEntries():
+                address = entry.ip().toString()
+                if ":" in address or address in seen_addresses:
+                    continue
+                ip_address = ipaddress.IPv4Address(address)
+                if (not ip_address.is_private or ip_address.is_loopback
+                        or ip_address.is_link_local):
+                    continue
+                prefix = entry.prefixLength()
+                network = ipaddress.IPv4Network(
+                    f"{address}/{prefix}", strict=False)
+                interfaces.append({
+                    "name": interface.humanReadableName(),
+                    "address": address,
+                    "network": str(network),
+                })
+                seen_addresses.add(address)
+        return interfaces
+
+    def start_remote_server(self, interface_data):
+        """Inicia el servidor exclusivamente en la interfaz LAN elegida."""
+        self.stop_remote_server()
+        server = LANRemoteServer(
+            interface_data["address"],
+            interface_data["network"],
+            database.DB_PATH,
+            self.remote_command_bridge.command_requested.emit,
+            self._remote_script_items,
+        )
+        server.start()
+        self.remote_server = server
+        self.remote_status_label.setText("CONTROL REMOTO · ACTIVO EN LAN")
+        self.btn_remote_control.setText("QR remoto · Activo")
+        return server
+
+    def stop_remote_server(self):
+        server = self.remote_server
+        self.remote_server = None
+        if server:
+            server.stop()
+        if hasattr(self, "remote_status_label"):
+            self.remote_status_label.setText("CONTROL REMOTO · DETENIDO")
+        if hasattr(self, "btn_remote_control"):
+            self.btn_remote_control.setText("Control remoto · QR")
+
+    def open_remote_control_dialog(self):
+        if self.remote_control_dialog is None:
+            self.remote_control_dialog = RemoteControlDialog(self)
+        self.remote_control_dialog.refresh_interfaces()
+        self.remote_control_dialog.show()
+        self.remote_control_dialog.raise_()
+        self.remote_control_dialog.activateWindow()
+
+    def _remote_script_items(self):
+        """Devuelve solo títulos y referencias necesarios para el control móvil."""
+        item_groups = (
+            ("song", self.guion["songs"]),
+            ("bible", self.guion["bible"]),
+            ("image", self.guion["images"]),
+            ("pptx", self.guion["pptx"]),
+        )
+        remote_items = []
+        for item_type, entries in item_groups:
+            for entry in entries:
+                if item_type == "bible":
+                    title = entry.get("title", "Pasaje bíblico")
+                    detail = f"{entry.get('book', '')} {entry.get('chapter', '')}"
+                elif item_type == "song":
+                    title = entry.get("title", "Canto sin título")
+                    detail = entry.get("category", "Canto")
+                elif item_type == "image":
+                    title = entry.get("name", "Imagen")
+                    detail = "Imagen"
+                else:
+                    title = entry.get("name", "Presentación")
+                    detail = "PPTX / PDF"
+                remote_items.append({
+                    "index": len(remote_items),
+                    "type": item_type,
+                    "title": str(title)[:120],
+                    "detail": str(detail)[:120],
+                })
+        return remote_items
+
+    def _handle_remote_command(self, command):
+        """Ejecuta comandos allowlist en el hilo de la interfaz Qt."""
+        action = command.get("action")
+        if action == "select_song":
+            self.set_active_nav_button("Cantos")
+            self.library_stack.setCurrentIndex(0)
+            self.topbar_bible_search.hide()
+            self.load_song_to_preview_by_id(command["song_id"])
+            if self.preview_list.count():
+                self.preview_list.setCurrentRow(0)
+                self.on_preview_card_clicked(self.preview_list.item(0))
+            return
+
+        if action == "select_verse":
+            self.set_active_nav_button("Biblias")
+            self.library_stack.setCurrentIndex(1)
+            self.topbar_bible_search.hide()
+            self.bible_version_combo.blockSignals(True)
+            self.bible_version_combo.setCurrentText(command["version"])
+            self.bible_version_combo.blockSignals(False)
+            self.bible_current_version = command["version"]
+            self.load_bible_chapter_to_preview(
+                command["book"],
+                command["chapter"],
+                focus_verse=command["verse"],
+            )
+            return
+
+        if action == "select_script_item":
+            script_items = self._remote_script_items()
+            item_index = command["index"]
+            if item_index >= len(script_items):
+                return
+            remote_item = script_items[item_index]
+            item_type = remote_item["type"]
+            ordered_groups = [
+                ("song", "songs"),
+                ("bible", "bible"),
+                ("image", "images"),
+                ("pptx", "pptx"),
+            ]
+            group_position = next(
+                index for index, (group_type, _) in enumerate(ordered_groups)
+                if group_type == item_type
+            )
+            group_key = ordered_groups[group_position][1]
+            group_offset = sum(
+                len(self.guion[key]) for _, key in ordered_groups[:group_position]
+            )
+            item_data = self.guion[group_key][item_index - group_offset]
+            page_index = {"song": 0, "bible": 1, "image": 2, "pptx": 3}[item_type]
+            nav_name = {"song": "Cantos", "bible": "Biblias", "image": "Imágenes", "pptx": "PPTX"}[item_type]
+            self.set_active_nav_button(nav_name)
+            self.library_stack.setCurrentIndex(page_index)
+            self._load_guion_item_to_preview(item_type, item_data, auto_project=True)
+            return
+
+        if action == "project_welcome":
+            self.project_quick_image("bienvenida", "Bienvenida")
+            return
+
+        if action == "project_farewell":
+            self.project_quick_image("despedida", "Despedida")
+            return
+
+        if action in {"previous", "next"}:
+            count = self.preview_list.count()
+            if not count:
+                return
+            current_row = self.preview_list.currentRow()
+            if current_row < 0:
+                target_row = 0
+            else:
+                target_row = current_row + (1 if action == "next" else -1)
+            if 0 <= target_row < count:
+                self.preview_list.setCurrentRow(target_row)
+                self.on_preview_card_clicked(self.preview_list.item(target_row))
+        elif action == "black":
+            self.project_black()
+        elif action == "restore":
+            self.project_restore()
+        elif action == "clear":
+            self.project_clear_text()
+        elif action == "font_increase":
+            self.increase_font_size()
+        elif action == "font_decrease":
+            self.decrease_font_size()
+
     def _check_screens_connected(self):
         """Verifica cada 2s si las pantallas asignadas siguen conectadas físicamente."""
         available = QApplication.screens()
@@ -4958,6 +5373,7 @@ class MainWindow(QMainWindow):
         self._update_guion_buttons()
 
     def closeEvent(self, event):
+        self.stop_remote_server()
         for win in list(self.projection_windows.values()):
             if win:
                 win.close_callback = None
